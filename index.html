@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Booth AI</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Face-api.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script defer src="script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Photo Booth AI</h1>
+        
+        <div class="status-message" id="status-message"></div>
+        
+        <div class="booth-container">
+            <!-- Video từ webcam -->
+            <div class="video-container">
+                <video id="video" autoplay muted></video>
+                <canvas id="video-overlay"></canvas>
+                <div class="controls">
+                    <button id="capture-btn">Chụp ảnh</button>
+                </div>
+            </div>
+            
+            <!-- Ảnh đã chụp -->
+            <div class="photo-container">
+                <canvas id="photo"></canvas>
+                <div class="controls">
+                    <button id="beautify-btn" disabled>Làm đẹp bằng AI</button>
+                    <button id="download-btn" disabled>Tải xuống</button>
+                    <button id="retry-btn" disabled>Chụp lại</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Đang xử lý...</p>
+        </div>
+    </div>
+</body>
+</html> 
