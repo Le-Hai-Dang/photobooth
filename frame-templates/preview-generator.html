@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tạo hình preview</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .preview {
+            border: 1px solid #ddd;
+            background-color: white;
+            padding: 10px;
+        }
+        .preview.vertical {
+            width: 100px;
+            height: 200px;
+            background-color: #fff0f3;
+            position: relative;
+        }
+        .preview.grid {
+            width: 150px;
+            height: 150px;
+            background-color: #fff0f3;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 5px;
+            padding: 10px;
+        }
+        .preview.horizontal {
+            width: 200px;
+            height: 100px;
+            background-color: #fff0f3;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            padding: 10px;
+        }
+        .preview.single {
+            width: 150px;
+            height: 150px;
+            background-color: #fff0f3;
+            padding: 10px;
+        }
+        .slot {
+            background-color: #ffccd5;
+            border: 1px dashed #ffb6c1;
+        }
+        .preview:after {
+            content: '';
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            width: 40px;
+            height: 10px;
+            background-color: #ffb6c1;
+            border-radius: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        h2 {
+            margin-top: 30px;
+        }
+        .info {
+            color: #666;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tạo hình preview cho các kiểu khung ảnh</h1>
+    <p class="info">Mở file này trong trình duyệt, click vào các nút để lưu hình preview</p>
+    
+    <div class="preview vertical" id="preview-vertical">
+        <div class="slot" style="height: 40px; margin-bottom: 5px;"></div>
+        <div class="slot" style="height: 40px; margin-bottom: 5px;"></div>
+        <div class="slot" style="height: 40px; margin-bottom: 5px;"></div>
+        <div class="slot" style="height: 40px;"></div>
+    </div>
+    <button onclick="savePreview('preview-vertical', 'preview-vertical.png')">Lưu preview dải dọc</button>
+    
+    <h2>Kiểu lưới 2x2</h2>
+    <div class="preview grid" id="preview-grid">
+        <div class="slot"></div>
+        <div class="slot"></div>
+        <div class="slot"></div>
+        <div class="slot"></div>
+    </div>
+    <button onclick="savePreview('preview-grid', 'preview-grid.png')">Lưu preview lưới</button>
+    
+    <h2>Kiểu ngang đôi</h2>
+    <div class="preview horizontal" id="preview-horizontal">
+        <div class="slot"></div>
+        <div class="slot"></div>
+    </div>
+    <button onclick="savePreview('preview-horizontal', 'preview-horizontal.png')">Lưu preview ngang đôi</button>
+    
+    <h2>Kiểu đơn</h2>
+    <div class="preview single" id="preview-single">
+        <div class="slot" style="height: 100%;"></div>
+    </div>
+    <button onclick="savePreview('preview-single', 'preview-single.png')">Lưu preview đơn</button>
+    
+    <script>
+        function savePreview(elementId, filename) {
+            const element = document.getElementById(elementId);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Thiết lập kích thước canvas
+            canvas.width = element.offsetWidth;
+            canvas.height = element.offsetHeight;
+            
+            // Vẽ element lên canvas
+            ctx.fillStyle = getComputedStyle(element).backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Vẽ các slot
+            const slots = element.querySelectorAll('.slot');
+            slots.forEach(slot => {
+                const rect = slot.getBoundingClientRect();
+                const elRect = element.getBoundingClientRect();
+                
+                ctx.fillStyle = getComputedStyle(slot).backgroundColor;
+                ctx.fillRect(
+                    rect.left - elRect.left,
+                    rect.top - elRect.top,
+                    rect.width,
+                    rect.height
+                );
+                
+                ctx.strokeStyle = '#ffb6c1';
+                ctx.strokeRect(
+                    rect.left - elRect.left,
+                    rect.top - elRect.top,
+                    rect.width,
+                    rect.height
+                );
+            });
+            
+            // Vẽ logo giả
+            ctx.fillStyle = '#ffb6c1';
+            ctx.fillRect(canvas.width - 40, canvas.height - 15, 35, 10);
+            
+            // Tạo link tải xuống
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+    </script>
+</body>
+</html> 

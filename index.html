@@ -5,41 +5,170 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Photo Booth AI</title>
     <link rel="stylesheet" href="style.css">
+    <!-- CSS Khung ảnh dễ thương -->
+    <link rel="stylesheet" href="frame-templates/cute-frames.css">
     <!-- Face-api.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- JS Khung ảnh dễ thương -->
+    <script defer src="frame-templates/cute-frames.js"></script>
     <script defer src="script.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Photo Booth AI</h1>
+        <!-- Màn hình chào mừng -->
+        <div id="welcome-screen" class="screen active">
+            <div class="welcome-content">
+                <h1>Photo Booth AI</h1>
+                <div class="logo-animation">
+                    <img src="stickers/camera-icon.png" alt="Camera Icon" class="camera-icon">
+                </div>
+                <p>Chào mừng bạn đến với trải nghiệm chụp ảnh</p>
+                <button id="start-btn" class="pulse-btn">Bắt đầu</button>
+                <button id="settings-btn" class="settings-btn"><img src="stickers/settings-icon.png" alt="Settings" width="20"></button>
+            </div>
+        </div>
         
-        <div class="status-message" id="status-message"></div>
-        
-        <div class="booth-container">
-            <!-- Video từ webcam -->
-            <div class="video-container">
-                <video id="video" autoplay muted></video>
-                <canvas id="video-overlay"></canvas>
-                <div class="controls">
-                    <button id="capture-btn">Chụp ảnh</button>
+        <!-- Màn hình chụp ảnh -->
+        <div id="capture-screen" class="screen">
+            <h2>Hãy tạo dáng đẹp nhất của bạn</h2>
+            <div class="status-message" id="status-message"></div>
+            
+            <div class="booth-container">
+                <!-- Video từ webcam -->
+                <div class="video-container">
+                    <video id="video" autoplay muted></video>
+                    <canvas id="video-overlay"></canvas>
+                    <div id="countdown" class="countdown"></div>
+                    <div class="photo-counter">
+                        <span id="current-photo">0</span>/4
+                    </div>
+                </div>
+                
+                <!-- Khung xem ảnh đã chụp -->
+                <div class="thumbnail-strip">
+                    <div class="thumbnail" id="thumbnail-1"></div>
+                    <div class="thumbnail" id="thumbnail-2"></div>
+                    <div class="thumbnail" id="thumbnail-3"></div>
+                    <div class="thumbnail" id="thumbnail-4"></div>
                 </div>
             </div>
             
-            <!-- Ảnh đã chụp -->
-            <div class="photo-container">
-                <canvas id="photo"></canvas>
-                <div class="controls">
-                    <button id="beautify-btn" disabled>Làm đẹp bằng AI</button>
-                    <button id="download-btn" disabled>Tải xuống</button>
-                    <button id="retry-btn" disabled>Chụp lại</button>
+            <div class="controls capture-controls">
+                <button id="capture-btn">Chụp ảnh</button>
+                <button id="retake-btn" class="hidden">Chụp lại</button>
+                <button id="continue-btn" class="hidden">Tiếp tục</button>
+            </div>
+        </div>
+        
+        <!-- Màn hình chỉnh sửa ảnh -->
+        <div id="edit-screen" class="screen">
+            <h2>Chọn khung ảnh và làm đẹp</h2>
+            
+            <div class="preview-container">
+                <canvas id="photo-preview"></canvas>
+                
+                <div class="frame-options">
+                    <h3>Chọn khung ảnh</h3>
+                    <!-- Khung ảnh cũ -->
+                    <div class="frame-selector default-frames">
+                        <button class="frame-option active" data-frame="new-year">
+                            <img src="frames/new-year.png" alt="New Year">
+                        </button>
+                        <button class="frame-option" data-frame="photo-story">
+                            <img src="frames/photo-story.png" alt="Photo Story">
+                        </button>
+                        <button class="frame-option" data-frame="friendship">
+                            <img src="frames/friendship.png" alt="Friendship">
+                        </button>
+                        <button class="frame-option" data-frame="wellness">
+                            <img src="frames/wellness.png" alt="Wellness">
+                        </button>
+                    </div>
+                    
+                    <!-- Khung ảnh dễ thương mới -->
+                    <h3>Khung ảnh dễ thương</h3>
+                    <div id="cute-frame-selector" class="frame-preview-container"></div>
+                    
+                    <button id="load-api-frames" class="api-button">Tải thêm khung hình</button>
+                    <div id="api-frame-status" class="api-message"></div>
                 </div>
+                
+                <div class="beautify-options">
+                    <h3>Làm đẹp bằng AI</h3>
+                    <label class="switch">
+                        <input type="checkbox" id="beautify-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="controls edit-controls">
+                <button id="back-to-capture-btn">Chụp lại</button>
+                <button id="save-btn">Lưu ảnh</button>
+            </div>
+        </div>
+        
+        <!-- Màn hình kết quả -->
+        <div id="result-screen" class="screen">
+            <h2>Ảnh của bạn đã sẵn sàng!</h2>
+            
+            <div class="result-container">
+                <canvas id="final-photo"></canvas>
+            </div>
+            
+            <div class="controls result-controls">
+                <button id="download-btn" class="shake-btn">Tải xuống</button>
+                <button id="new-session-btn">Phiên chụp mới</button>
+            </div>
+        </div>
+        
+        <!-- Màn hình cài đặt -->
+        <div id="settings-screen" class="screen">
+            <h2>Cài đặt</h2>
+            
+            <div class="settings-container">
+                <div class="settings-group">
+                    <h3>Cấu hình webhook</h3>
+                    <div class="setting-item">
+                        <label for="webhook-url">URL webhook:</label>
+                        <input type="text" id="webhook-url" placeholder="https://your-webhook-endpoint.com">
+                    </div>
+                    <div class="setting-item">
+                        <label for="enable-webhook">Bật webhook:</label>
+                        <label class="switch">
+                            <input type="checkbox" id="enable-webhook">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-group">
+                    <h3>Cài đặt API</h3>
+                    <div class="setting-item">
+                        <label for="api-url">URL API:</label>
+                        <input type="text" id="api-url" value="https://photobooth-app.org/api" readonly>
+                    </div>
+                    <div class="api-status">
+                        <span id="api-status-text">Chưa kết nối</span>
+                    </div>
+                    <button id="test-api-btn" class="api-button">Kiểm tra kết nối API</button>
+                </div>
+            </div>
+            
+            <div class="controls settings-controls">
+                <button id="save-settings-btn">Lưu cài đặt</button>
+                <button id="back-from-settings-btn">Quay lại</button>
             </div>
         </div>
         
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <p>Đang xử lý...</p>
+            <p id="loading-text">Đang xử lý...</p>
         </div>
     </div>
+    
+    <!-- Âm thanh -->
+    <audio id="countdown-sound" src="sounds/beep.mp3" preload="auto"></audio>
+    <audio id="shutter-sound" src="sounds/shutter.mp3" preload="auto"></audio>
 </body>
 </html> 

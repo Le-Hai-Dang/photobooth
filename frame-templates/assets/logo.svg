@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" width="200" height="50">
+  <g>
+    <circle cx="30" cy="25" r="20" fill="#f9c6c6" stroke="#e6a5a5" stroke-width="1.5" />
+    <text x="65" y="30" font-family="cursive, Arial, sans-serif" font-size="24" fill="#d47b7b" font-style="italic">
+      Photo Time
+    </text>
+    <circle cx="30" cy="25" r="10" fill="none" stroke="#fff" stroke-width="1.5" />
+    <circle cx="30" cy="25" r="15" fill="none" stroke="#fff" stroke-width="1" />
+    <circle cx="25" cy="20" r="3" fill="#ffffff" />
+  </g>
+</svg> 

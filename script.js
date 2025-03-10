@@ -3,41 +3,128 @@ let videoStream = null;
 let capturedImage = null;
 let isFaceDetectionModelLoaded = false;
 let isProcessing = false;
+let currentScreen = 'welcome'; // 'welcome', 'capture', 'edit', 'result'
+let countdownInterval = null;
+let currentPhotoIndex = 0;
+let capturedPhotos = [null, null, null, null];
+let selectedFrameIndex = 0;
+let autoResetTimeout = null;
+let isBeautifyEnabled = false;
+let webhookEnabled = false;
+let webhookUrl = '';
+let apiUrl = 'https://photobooth-app.org/api';
+let apiFrameStatus = document.getElementById('api-frame-status');
+
+// Thêm biến cho khung ảnh dễ thương
+let selectedCuteFrameType = null;
+let useCuteFrame = false;
+let cuteFrameSelector = null;
 
 // DOM Elements
 const video = document.getElementById('video');
 const videoOverlay = document.getElementById('video-overlay');
-const photoCanvas = document.getElementById('photo');
-const captureBtn = document.getElementById('capture-btn');
-const beautifyBtn = document.getElementById('beautify-btn');
-const downloadBtn = document.getElementById('download-btn');
-const retryBtn = document.getElementById('retry-btn');
 const statusMsg = document.getElementById('status-message');
 const loadingElement = document.getElementById('loading');
+const loadingText = document.getElementById('loading-text');
+const countdownElement = document.getElementById('countdown');
+const currentPhotoElement = document.getElementById('current-photo');
+
+// Screens
+const welcomeScreen = document.getElementById('welcome-screen');
+const captureScreen = document.getElementById('capture-screen');
+const editScreen = document.getElementById('edit-screen');
+const resultScreen = document.getElementById('result-screen');
+
+// Buttons
+const startBtn = document.getElementById('start-btn');
+const captureBtn = document.getElementById('capture-btn');
+const retakeBtn = document.getElementById('retake-btn');
+const continueBtn = document.getElementById('continue-btn');
+const backToCaptureBtn = document.getElementById('back-to-capture-btn');
+const saveBtn = document.getElementById('save-btn');
+const downloadBtn = document.getElementById('download-btn');
+const newSessionBtn = document.getElementById('new-session-btn');
+
+// Canvas
+const photoPreviewCanvas = document.getElementById('photo-preview');
+const finalPhotoCanvas = document.getElementById('final-photo');
+const thumbnailCanvas = [
+    document.createElement('canvas'),
+    document.createElement('canvas'),
+    document.createElement('canvas'),
+    document.createElement('canvas')
+];
 
 // Canvas Contexts
-const photoCtx = photoCanvas.getContext('2d');
+const previewCtx = photoPreviewCanvas.getContext('2d');
+const finalCtx = finalPhotoCanvas.getContext('2d');
 const overlayCtx = videoOverlay.getContext('2d');
+const thumbnailCtx = thumbnailCanvas.map(canvas => canvas.getContext('2d'));
+
+// Audio
+const countdownSound = document.getElementById('countdown-sound');
+const shutterSound = document.getElementById('shutter-sound');
+
+// Khung ảnh
+const frameOptions = document.querySelectorAll('.frame-option');
+const beautifyToggle = document.getElementById('beautify-toggle');
+
+// Frames (sẽ được tải sau)
+const frames = [
+    { name: 'new-year', src: 'frames/new-year.png', image: null },
+    { name: 'photo-story', src: 'frames/photo-story.png', image: null },
+    { name: 'friendship', src: 'frames/friendship.png', image: null },
+    { name: 'wellness', src: 'frames/wellness.png', image: null }
+];
+
+// Thêm DOM Elements mới
+const settingsBtn = document.getElementById('settings-btn');
+const settingsScreen = document.getElementById('settings-screen');
+const saveSettingsBtn = document.getElementById('save-settings-btn');
+const backFromSettingsBtn = document.getElementById('back-from-settings-btn');
+const webhookUrlInput = document.getElementById('webhook-url');
+const enableWebhookCheckbox = document.getElementById('enable-webhook');
+const apiUrlInput = document.getElementById('api-url');
+const testApiBtn = document.getElementById('test-api-btn');
+const apiStatusText = document.getElementById('api-status-text');
+const loadApiFramesBtn = document.getElementById('load-api-frames');
 
 // Khởi tạo
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        // Thiết lập canvas cho các thumbnail
+        for (let i = 0; i < 4; i++) {
+            const thumbnail = document.getElementById(`thumbnail-${i + 1}`);
+            thumbnailCanvas[i].width = 300;
+            thumbnailCanvas[i].height = 400;
+            thumbnail.appendChild(thumbnailCanvas[i]);
+        }
+        
+        // Thiết lập canvas cho preview và final
+        photoPreviewCanvas.width = 600;
+        photoPreviewCanvas.height = 800;
+        finalPhotoCanvas.width = 600;
+        finalPhotoCanvas.height = 800;
+        
         showStatus('Đang tải các model AI...', false);
         
         // Tải các models cho face-api.js
         await loadFaceDetectionModels();
         
+        // Tiền tải hình ảnh khung
+        await preloadFrames();
+        
+        // Khởi tạo API listener
+        initApiListener();
+        
+        // Tải cài đặt từ localStorage
+        loadSettings();
+        
         isFaceDetectionModelLoaded = true;
         showStatus('Các model AI đã được tải thành công!', false);
         
-        // Khởi tạo webcam
-        await setupWebcam();
-        
         // Thiết lập event listeners
         setupEventListeners();
-        
-        // Bắt đầu phát hiện khuôn mặt
-        detectFaces();
         
     } catch (error) {
         console.error('Lỗi khởi tạo:', error);
@@ -55,6 +142,15 @@ async function loadFaceDetectionModels() {
     } catch (error) {
         throw new Error('Không thể tải models AI: ' + error.message);
     }
+}
+
+// Tiền tải các khung ảnh
+async function preloadFrames() {
+    // Không cần tải khung ảnh mặc định nữa vì chúng ta chỉ sử dụng khung CSS
+    console.log('Bỏ qua việc tải khung ảnh mặc định, chỉ sử dụng khung CSS');
+    
+    // Trả về Promise đã hoàn thành để chuỗi Promise không bị gián đoạn
+    return Promise.resolve();
 }
 
 // Khởi tạo webcam
@@ -79,10 +175,6 @@ async function setupWebcam() {
                 
                 video.width = videoWidth;
                 video.height = videoHeight;
-                
-                photoCanvas.width = videoWidth;
-                photoCanvas.height = videoHeight;
-                
                 videoOverlay.width = videoWidth;
                 videoOverlay.height = videoHeight;
                 
@@ -96,10 +188,49 @@ async function setupWebcam() {
 
 // Thiết lập event listeners
 function setupEventListeners() {
-    captureBtn.addEventListener('click', capturePhoto);
-    beautifyBtn.addEventListener('click', beautifyPhoto);
+    // Nút chuyển màn hình
+    startBtn.addEventListener('click', startCaptureSession);
+    continueBtn.addEventListener('click', showEditScreen);
+    backToCaptureBtn.addEventListener('click', showCaptureScreen);
+    saveBtn.addEventListener('click', savePhoto);
     downloadBtn.addEventListener('click', downloadPhoto);
-    retryBtn.addEventListener('click', resetPhoto);
+    newSessionBtn.addEventListener('click', startNewSession);
+    
+    // Nút chức năng
+    captureBtn.addEventListener('click', startCountdown);
+    retakeBtn.addEventListener('click', retakePhotos);
+    
+    // Lựa chọn khung
+    frameOptions.forEach((option, index) => {
+        option.addEventListener('click', () => {
+            // Chọn khung ảnh thông thường
+            useCuteFrame = false;
+            selectFrame(index);
+            
+            // Xóa active từ các khung ảnh dễ thương
+            document.querySelectorAll('#cute-frame-selector .frame-preview').forEach(item => {
+                item.classList.remove('active');
+            });
+        });
+    });
+    
+    // Toggle làm đẹp
+    beautifyToggle.addEventListener('change', () => {
+        isBeautifyEnabled = beautifyToggle.checked;
+        if (currentScreen === 'edit') {
+            renderPreviewPhoto();
+        }
+    });
+
+    // Khởi tạo khung ảnh dễ thương
+    initCuteFrames();
+
+    // Thêm sự kiện cho các phần tử mới
+    loadApiFramesBtn.addEventListener('click', loadFramesFromAPI);
+    settingsBtn.addEventListener('click', showSettingsScreen);
+    saveSettingsBtn.addEventListener('click', saveSettings);
+    backFromSettingsBtn.addEventListener('click', hideSettingsScreen);
+    testApiBtn.addEventListener('click', testApiConnection);
 }
 
 // Hiển thị thông báo trạng thái
@@ -108,9 +239,92 @@ function showStatus(message, isError = false) {
     statusMsg.className = 'status-message' + (isError ? ' error' : '');
 }
 
+// Chuyển màn hình
+function showScreen(screenName) {
+    // Ẩn tất cả màn hình
+    welcomeScreen.classList.remove('active');
+    captureScreen.classList.remove('active');
+    editScreen.classList.remove('active');
+    resultScreen.classList.remove('active');
+    settingsScreen.classList.remove('active');
+    
+    // Hiển thị màn hình được chọn
+    switch (screenName) {
+        case 'welcome':
+            welcomeScreen.classList.add('active');
+            break;
+        case 'capture':
+            captureScreen.classList.add('active');
+            break;
+        case 'edit':
+            editScreen.classList.add('active');
+            break;
+        case 'result':
+            resultScreen.classList.add('active');
+            break;
+        case 'settings':
+            settingsScreen.classList.add('active');
+            break;
+    }
+    
+    currentScreen = screenName;
+    
+    // Thiết lập auto reset cho màn hình kết quả
+    if (screenName === 'result') {
+        if (autoResetTimeout) {
+            clearTimeout(autoResetTimeout);
+        }
+        autoResetTimeout = setTimeout(() => {
+            startNewSession();
+        }, 10000); // Tự động reset sau 10 giây
+    } else if (autoResetTimeout) {
+        clearTimeout(autoResetTimeout);
+    }
+}
+
+// Bắt đầu phiên chụp
+async function startCaptureSession() {
+    try {
+        // Khởi tạo webcam nếu chưa
+        if (!video.srcObject) {
+            showStatus('Đang kết nối với camera...', false);
+            await setupWebcam();
+        }
+        
+        // Hiển thị màn hình chụp
+        showScreen('capture');
+        
+        // Reset các biến
+        currentPhotoIndex = 0;
+        capturedPhotos = [null, null, null, null];
+        currentPhotoElement.textContent = currentPhotoIndex.toString();
+        
+        // Xóa nội dung các thumbnail
+        for (let i = 0; i < 4; i++) {
+            const thumbnail = document.getElementById(`thumbnail-${i + 1}`);
+            thumbnail.classList.remove('filled');
+            thumbnail.classList.remove('active');
+            thumbnailCtx[i].clearRect(0, 0, thumbnailCanvas[i].width, thumbnailCanvas[i].height);
+        }
+        
+        // Cập nhật giao diện nút
+        captureBtn.classList.remove('hidden');
+        retakeBtn.classList.add('hidden');
+        continueBtn.classList.add('hidden');
+        
+        // Bắt đầu phát hiện khuôn mặt
+        detectFaces();
+        
+        showStatus('Hãy tạo dáng và nhấn nút "Chụp ảnh"', false);
+    } catch (error) {
+        console.error('Lỗi khi bắt đầu phiên chụp:', error);
+        showStatus('Không thể bắt đầu phiên chụp: ' + error.message, true);
+    }
+}
+
 // Phát hiện khuôn mặt trong video stream
 async function detectFaces() {
-    if (!isFaceDetectionModelLoaded || !video.srcObject) return;
+    if (!isFaceDetectionModelLoaded || !video.srcObject || currentScreen !== 'capture') return;
     
     try {
         const detections = await faceapi.detectAllFaces(
@@ -129,149 +343,479 @@ async function detectFaces() {
             
             // Vẽ landmark khuôn mặt
             faceapi.draw.drawFaceLandmarks(videoOverlay, resizedDetections);
-            
-            // Hiển thị vùng xử lý của khuôn mặt
-            for (const detection of resizedDetections) {
-                try {
-                    const landmarks = detection.landmarks;
-                    
-                    // Lấy các nhóm điểm quan trọng
-                    const jawPositions = landmarks.getJawOutline();
-                    const leftEyeBrowPositions = landmarks.getLeftEyeBrow();
-                    const rightEyeBrowPositions = landmarks.getRightEyeBrow();
-                    
-                    // Tìm điểm cao nhất của lông mày
-                    let minY = Number.MAX_VALUE;
-                    for (const pos of [...leftEyeBrowPositions, ...rightEyeBrowPositions]) {
-                        if (pos.y < minY) {
-                            minY = pos.y;
-                        }
-                    }
-                    
-                    // Lấy điểm ngoài cùng của lông mày
-                    const leftMostEyeBrow = leftEyeBrowPositions[0];
-                    const rightMostEyeBrow = rightEyeBrowPositions[rightEyeBrowPositions.length - 1];
-                    
-                    // Tính khoảng cách từ lông mày đến jawline để ước tính chiều cao trán
-                    const faceHeight = jawPositions[8].y - minY; // Từ giữa cằm đến lông mày
-                    const foreheadHeight = faceHeight * 0.6; // Mở rộng lên 0.6 để trán cao hơn
-                    
-                    // Vị trí cao nhất của trán
-                    const foreheadTopY = minY - foreheadHeight;
-                    
-                    // Vẽ đường viền khuôn mặt
-                    overlayCtx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-                    overlayCtx.lineWidth = 2;
-                    overlayCtx.beginPath();
-                    
-                    // Bắt đầu từ điểm jawline bên trái
-                    overlayCtx.moveTo(jawPositions[0].x, jawPositions[0].y);
-                    
-                    // Vẽ đường lên tới trán bên trái
-                    overlayCtx.lineTo(foreheadLeftX, foreheadTopY);
-                    
-                    // Vẽ đường trán với đường cong rộng hơn và cao hơn
-                    overlayCtx.quadraticCurveTo(
-                        (foreheadLeftX + foreheadRightX) / 2, 
-                        foreheadTopY - 20, // Đỉnh của đường cong cao hơn nhiều
-                        foreheadRightX, 
-                        foreheadTopY
-                    );
-                    
-                    // Vẽ đường xuống tới jawline bên phải
-                    overlayCtx.lineTo(jawPositions[jawPositions.length - 1].x, jawPositions[jawPositions.length - 1].y);
-                    
-                    // Vẽ đường jawline
-                    for (let i = jawPositions.length - 2; i >= 0; i--) {
-                        overlayCtx.lineTo(jawPositions[i].x, jawPositions[i].y);
-                    }
-                    
-                    // Đóng đường
-                    overlayCtx.closePath();
-                    overlayCtx.stroke();
-                    
-                    // Hiển thị vùng trán để debug (tùy chọn)
-                    // overlayCtx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-                    // overlayCtx.fill();
-                } catch (error) {
-                    console.error("Lỗi khi vẽ đường viền khuôn mặt:", error);
-                }
-            }
         }
     } catch (error) {
         console.error('Lỗi phát hiện khuôn mặt:', error);
     }
     
-    // Tiếp tục phát hiện trong frame tiếp theo
-    requestAnimationFrame(detectFaces);
+    // Tiếp tục phát hiện trong frame tiếp theo nếu đang ở màn hình chụp
+    if (currentScreen === 'capture') {
+        requestAnimationFrame(detectFaces);
+    }
+}
+
+// Bắt đầu đếm ngược
+function startCountdown() {
+    if (isProcessing) return;
+    
+    let count = 3;
+    countdownElement.textContent = count.toString();
+    countdownElement.classList.add('active');
+    
+    // Phát âm thanh đếm ngược
+    countdownSound.currentTime = 0;
+    countdownSound.play();
+    
+    isProcessing = true;
+    countdownInterval = setInterval(() => {
+        count--;
+        
+        if (count > 0) {
+            countdownElement.textContent = count.toString();
+            countdownSound.currentTime = 0;
+            countdownSound.play();
+        } else {
+            clearInterval(countdownInterval);
+            countdownElement.textContent = '';
+            countdownElement.classList.remove('active');
+            
+            // Phát âm thanh chụp
+            shutterSound.currentTime = 0;
+            shutterSound.play();
+            
+            // Hiệu ứng flash
+            const flash = document.createElement('div');
+            flash.style.position = 'absolute';
+            flash.style.top = '0';
+            flash.style.left = '0';
+            flash.style.width = '100%';
+            flash.style.height = '100%';
+            flash.style.backgroundColor = 'white';
+            flash.style.opacity = '0.8';
+            flash.style.transition = 'opacity 0.5s';
+            flash.style.pointerEvents = 'none';
+            flash.style.zIndex = '5';
+            
+            const videoContainer = document.querySelector('.video-container');
+            videoContainer.appendChild(flash);
+            
+            setTimeout(() => {
+                flash.style.opacity = '0';
+                setTimeout(() => {
+                    videoContainer.removeChild(flash);
+                    // Chụp ảnh sau hiệu ứng flash
+                    capturePhoto();
+                }, 500);
+            }, 100);
+        }
+    }, 1000);
 }
 
 // Chụp ảnh từ webcam
 function capturePhoto() {
     try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
         // Vẽ frame hiện tại từ video lên canvas
-        photoCtx.drawImage(video, 0, 0, photoCanvas.width, photoCanvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
         // Lưu ảnh đã chụp
-        capturedImage = photoCtx.getImageData(0, 0, photoCanvas.width, photoCanvas.height);
+        capturedPhotos[currentPhotoIndex] = canvas.toDataURL('image/png');
         
-        // Kích hoạt các nút
-        beautifyBtn.disabled = false;
-        retryBtn.disabled = false;
+        // Cập nhật thumbnail
+        const aspect = thumbnailCanvas[currentPhotoIndex].height / thumbnailCanvas[currentPhotoIndex].width;
+        const thumbHeight = canvas.width * aspect;
+        const thumbY = (canvas.height - thumbHeight) / 2;
         
-        showStatus('Đã chụp ảnh! Bạn có thể làm đẹp bằng AI.', false);
+        // Vẽ ảnh lên thumbnail
+        thumbnailCtx[currentPhotoIndex].drawImage(
+            canvas, 
+            0, thumbY, canvas.width, thumbHeight,
+            0, 0, thumbnailCanvas[currentPhotoIndex].width, thumbnailCanvas[currentPhotoIndex].height
+        );
+        
+        // Hiển thị thumbnail
+        const thumbnail = document.getElementById(`thumbnail-${currentPhotoIndex + 1}`);
+        thumbnail.classList.add('filled');
+        thumbnail.classList.add('active');
+        
+        // Đánh dấu các thumbnail trước là đã chụp nhưng không active
+        for (let i = 0; i < currentPhotoIndex; i++) {
+            const prevThumbnail = document.getElementById(`thumbnail-${i + 1}`);
+            prevThumbnail.classList.remove('active');
+        }
+        
+        // Tăng chỉ số ảnh hiện tại
+        currentPhotoIndex++;
+        currentPhotoElement.textContent = currentPhotoIndex.toString();
+        
+        // Kiểm tra xem đã chụp đủ 4 ảnh chưa
+        if (currentPhotoIndex >= 4) {
+            showStatus('Bạn đã chụp đủ 4 ảnh!', false);
+            captureBtn.classList.add('hidden');
+            retakeBtn.classList.remove('hidden');
+            continueBtn.classList.remove('hidden');
+        } else {
+            showStatus(`Đã chụp ${currentPhotoIndex}/4 ảnh. Hãy tạo dáng cho ảnh tiếp theo!`, false);
+            
+            // Cho phép chụp ảnh tiếp theo
+            isProcessing = false;
+        }
     } catch (error) {
         console.error('Lỗi khi chụp ảnh:', error);
         showStatus('Không thể chụp ảnh: ' + error.message, true);
+        isProcessing = false;
     }
 }
 
-// Làm đẹp ảnh bằng AI
-async function beautifyPhoto() {
-    if (isProcessing || !capturedImage) return;
+// Chụp lại ảnh
+function retakePhotos() {
+    currentPhotoIndex = 0;
+    capturedPhotos = [null, null, null, null];
+    currentPhotoElement.textContent = currentPhotoIndex.toString();
     
-    try {
-        isProcessing = true;
-        showLoading(true);
+    // Xóa nội dung các thumbnail
+    for (let i = 0; i < 4; i++) {
+        const thumbnail = document.getElementById(`thumbnail-${i + 1}`);
+        thumbnail.classList.remove('filled');
+        thumbnail.classList.remove('active');
+        thumbnailCtx[i].clearRect(0, 0, thumbnailCanvas[i].width, thumbnailCanvas[i].height);
+    }
+    
+    // Cập nhật giao diện nút
+    captureBtn.classList.remove('hidden');
+    retakeBtn.classList.add('hidden');
+    continueBtn.classList.add('hidden');
+    
+    showStatus('Hãy tạo dáng và nhấn nút "Chụp ảnh"', false);
+    isProcessing = false;
+}
+
+// Hiển thị màn hình chỉnh sửa
+function showEditScreen() {
+    showScreen('edit');
+    
+    // Ẩn phần khung ảnh mặc định và nút tải từ API
+    const defaultFrames = document.querySelector('.default-frames');
+    if (defaultFrames) {
+        defaultFrames.style.display = 'none';
+    }
+    
+    const loadApiFramesBtn = document.getElementById('load-api-frames');
+    if (loadApiFramesBtn) {
+        loadApiFramesBtn.style.display = 'none';
+    }
+    
+    // Chỉ sử dụng khung ảnh dễ thương CSS
+    useCuteFrame = true;
+    
+    // Khung ảnh đầu tiên là lưới 2x2
+    selectedCuteFrameType = FRAME_TYPES.GRID_2X2;
+    
+    // Đặt toggle làm đẹp mặc định là true
+    beautifyToggle.checked = true;
+    isBeautifyEnabled = true;
+    
+    showStatus('Chọn khung ảnh và tùy chọn làm đẹp', false);
+}
+
+// Hiển thị màn hình chụp
+function showCaptureScreen() {
+    showScreen('capture');
+}
+
+// Chọn khung ảnh
+function selectFrame(index) {
+    // Cập nhật trạng thái
+    selectedFrameIndex = index;
+    
+    // Nếu là chọn từ frames CSS cute
+    if (window.CuteFrames && window.CuteFrames.FRAME_INFO && index < window.CuteFrames.FRAME_INFO.length) {
+        useCuteFrame = true;
+        selectedCuteFrameType = window.CuteFrames.FRAME_INFO[index].type;
+    }
+    
+    // Cập nhật UI
+    document.querySelectorAll('.frame-option').forEach((option, i) => {
+        if (i === index) {
+            option.classList.add('active');
+        } else {
+            option.classList.remove('active');
+        }
+    });
+    
+    // Render lại preview
+    renderPreviewPhoto();
+}
+
+// Render ảnh với khung đã chọn
+function renderPreviewPhoto() {
+    if (!capturedPhotos[0]) return;
+    
+    // Xóa canvas
+    previewCtx.clearRect(0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+    
+    if (useCuteFrame && selectedCuteFrameType) {
+        // Sử dụng khung ảnh dễ thương
+        window.CuteFrames.renderToCanvas(photoPreviewCanvas, selectedCuteFrameType, capturedPhotos)
+            .then(() => {
+                console.log('Khung ảnh dễ thương đã được render');
+            })
+            .catch(error => {
+                console.error('Lỗi khi render khung ảnh dễ thương:', error);
+                // Fallback về cách render thông thường
+                renderNormalFrame();
+            });
+    } else {
+        // Sử dụng khung ảnh thông thường
+        renderNormalFrame();
+    }
+}
+
+// Render khung ảnh thông thường
+function renderNormalFrame() {
+    // Tạo ảnh chính từ 4 ảnh đã chụp
+    createCollage().then(collageImg => {
+        // Vẽ ảnh lên canvas
+        previewCtx.drawImage(collageImg, 0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
         
-        // Lấy khuôn mặt từ ảnh đã chụp
-        const detections = await faceapi.detectAllFaces(
-            photoCanvas, 
-            new faceapi.TinyFaceDetectorOptions()
-        ).withFaceLandmarks();
+        // Vẽ khung ảnh nếu đã tải thành công
+        if (frames[selectedFrameIndex].image) {
+            previewCtx.drawImage(
+                frames[selectedFrameIndex].image,
+                0, 0,
+                photoPreviewCanvas.width, photoPreviewCanvas.height
+            );
+        }
+    });
+}
+
+// Tạo ảnh ghép từ 4 ảnh đã chụp
+async function createCollage() {
+    return new Promise((resolve) => {
+        const collageCanvas = document.createElement('canvas');
+        collageCanvas.width = photoPreviewCanvas.width;
+        collageCanvas.height = photoPreviewCanvas.height;
+        const ctx = collageCanvas.getContext('2d');
         
-        if (detections.length === 0) {
-            showStatus('Không phát hiện khuôn mặt trong ảnh', true);
-            isProcessing = false;
-            showLoading(false);
-            return;
+        // Chia canvas thành 4 phần
+        const cellWidth = collageCanvas.width / 2;
+        const cellHeight = collageCanvas.height / 2;
+        
+        // Tải 4 ảnh
+        let loadedImages = 0;
+        const images = [];
+        
+        for (let i = 0; i < 4; i++) {
+            if (capturedPhotos[i]) {
+                const img = new Image();
+                img.onload = () => {
+                    images[i] = img;
+                    loadedImages++;
+                    
+                    if (loadedImages === 4) {
+                        drawCollage();
+                    }
+                };
+                img.src = capturedPhotos[i];
+            } else {
+                // Nếu chưa có ảnh, tạo ảnh trống
+                images[i] = null;
+                loadedImages++;
+            }
         }
         
-        // Clone ảnh gốc để xử lý
-        const processedImageData = new ImageData(
-            new Uint8ClampedArray(capturedImage.data),
-            capturedImage.width,
-            capturedImage.height
-        );
+        // Nếu đã tải đủ ảnh, vẽ collage
+        if (loadedImages === 4) {
+            drawCollage();
+        }
         
-        // Áp dụng các hiệu ứng làm đẹp
-        smoothSkin(processedImageData, detections);
-        brightenSkin(processedImageData, detections);
+        function drawCollage() {
+            // Vẽ nền
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, collageCanvas.width, collageCanvas.height);
+            
+            // Vị trí của 4 ảnh
+            const positions = [
+                { x: 0, y: 0 },
+                { x: cellWidth, y: 0 },
+                { x: 0, y: cellHeight },
+                { x: cellWidth, y: cellHeight }
+            ];
+            
+            // Vẽ 4 ảnh
+            for (let i = 0; i < 4; i++) {
+                if (images[i]) {
+                    const pos = positions[i];
+                    
+                    // Tính toán tỷ lệ khung hình
+                    const imgAspect = images[i].height / images[i].width;
+                    const cellAspect = cellHeight / cellWidth;
+                    
+                    let sw, sh, sx, sy;
+                    
+                    if (imgAspect > cellAspect) {
+                        // Ảnh cao hơn, cắt trên dưới
+                        sw = images[i].width;
+                        sh = images[i].width * cellAspect;
+                        sx = 0;
+                        sy = (images[i].height - sh) / 2;
+                    } else {
+                        // Ảnh rộng hơn, cắt trái phải
+                        sh = images[i].height;
+                        sw = images[i].height / cellAspect;
+                        sx = (images[i].width - sw) / 2;
+                        sy = 0;
+                    }
+                    
+                    // Vẽ ảnh đã cắt
+                    ctx.drawImage(
+                        images[i],
+                        sx, sy, sw, sh,
+                        pos.x, pos.y, cellWidth, cellHeight
+                    );
+                    
+                    // Nếu làm đẹp được bật, áp dụng bộ lọc
+                    if (isBeautifyEnabled) {
+                        // Lấy dữ liệu hình ảnh từ vùng vừa vẽ
+                        const imageData = ctx.getImageData(pos.x, pos.y, cellWidth, cellHeight);
+                        
+                        // Áp dụng bộ lọc làm đẹp cơ bản (tăng độ sáng và độ tương phản)
+                        applyBeautyFilter(imageData);
+                        
+                        // Đặt dữ liệu hình ảnh đã xử lý trở lại
+                        ctx.putImageData(imageData, pos.x, pos.y);
+                    }
+                }
+            }
+            
+            resolve(collageCanvas);
+        }
+    });
+}
+
+// Bộ lọc làm đẹp cơ bản
+function applyBeautyFilter(imageData) {
+    const data = imageData.data;
+    
+    // Tăng độ sáng và độ tương phản cho từng pixel
+    for (let i = 0; i < data.length; i += 4) {
+        // Tăng độ sáng
+        data[i] = Math.min(255, data[i] * 1.1);        // R
+        data[i + 1] = Math.min(255, data[i + 1] * 1.1); // G
+        data[i + 2] = Math.min(255, data[i + 2] * 1.1); // B
         
-        // Hiển thị ảnh đã xử lý
-        photoCtx.putImageData(processedImageData, 0, 0);
-        
-        // Kích hoạt nút tải xuống
-        downloadBtn.disabled = false;
-        
-        showStatus('Đã làm đẹp ảnh!', false);
-    } catch (error) {
-        console.error('Lỗi khi làm đẹp ảnh:', error);
-        showStatus('Không thể làm đẹp ảnh: ' + error.message, true);
-    } finally {
-        isProcessing = false;
-        showLoading(false);
+        // Tăng độ tương phản
+        data[i] = Math.min(255, ((data[i] / 255 - 0.5) * 1.2 + 0.5) * 255);
+        data[i + 1] = Math.min(255, ((data[i + 1] / 255 - 0.5) * 1.2 + 0.5) * 255);
+        data[i + 2] = Math.min(255, ((data[i + 2] / 255 - 0.5) * 1.2 + 0.5) * 255);
     }
+    
+    return imageData;
+}
+
+// Lưu ảnh đã chỉnh sửa
+async function savePhoto() {
+    if (!capturedPhotos[0]) {
+        showStatus('Chưa có ảnh để lưu', true);
+        return;
+    }
+    
+    try {
+        showLoading(true, 'Đang xử lý ảnh...');
+        
+        // Lấy kích thước của canvas
+        const width = finalPhotoCanvas.width;
+        const height = finalPhotoCanvas.height;
+        
+        // Xóa canvas
+        const finalCtx = finalPhotoCanvas.getContext('2d');
+        finalCtx.clearRect(0, 0, width, height);
+        
+        // Dùng khung ảnh dễ thương CSS
+        if (useCuteFrame && selectedCuteFrameType) {
+            await window.CuteFrames.renderToCanvas(
+                finalPhotoCanvas, 
+                selectedCuteFrameType, 
+                capturedPhotos
+            );
+            console.log('Đã render khung ảnh dễ thương css');
+        } else {
+            // Fallback: render theo cách thông thường
+            createCollage().then(collageImg => {
+                finalCtx.drawImage(collageImg, 0, 0, width, height);
+            });
+        }
+        
+        // Hiển thị màn hình kết quả
+        showScreen('result');
+        showLoading(false);
+        showStatus('Ảnh đã được lưu thành công!', false);
+    } catch (error) {
+        console.error('Lỗi khi lưu ảnh:', error);
+        showLoading(false);
+        showStatus('Không thể lưu ảnh: ' + error.message, true);
+    }
+}
+
+// Tải xuống ảnh
+function downloadPhoto() {
+    try {
+        const dataUrl = finalPhotoCanvas.toDataURL('image/png');
+        
+        // Tạo tên file dựa trên ngày giờ hiện tại
+        const date = new Date();
+        const fileName = `photobooth_${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}_${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}${date.getSeconds().toString().padStart(2, '0')}.png`;
+        
+        // Tạo link tải xuống
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+        
+        // Gửi thông báo webhook
+        sendWebhookNotification(dataUrl, { fileName });
+        
+        showStatus('Ảnh đã được tải xuống!', false);
+    } catch (error) {
+        console.error('Lỗi khi tải xuống ảnh:', error);
+        showStatus('Không thể tải xuống ảnh: ' + error.message, true);
+    }
+}
+
+// Bắt đầu phiên mới
+function startNewSession() {
+    currentPhotoIndex = 0;
+    capturedPhotos = [null, null, null, null];
+    
+    // Hiện lại màn hình chào mừng
+    showScreen('welcome');
+    
+    // Dừng webcam nếu đang hoạt động
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+        video.srcObject = null;
+    }
+}
+
+// Hiển thị/ẩn loading
+function showLoading(show, message = 'Đang xử lý...') {
+    loadingElement.style.display = show ? 'flex' : 'none';
+    loadingText.textContent = message;
+}
+
+// Làm đẹp ảnh (sử dụng lại chức năng hiện có)
+async function beautifyPhoto(imageData, detections) {
+    // Chức năng hiện có
+    smoothSkin(imageData, detections);
+    brightenSkin(imageData, detections);
+    
+    return imageData;
 }
 
 // Làm mịn da (hiệu ứng làm đẹp)
@@ -421,190 +965,6 @@ function smoothSkin(imageData, detections) {
             console.error("Lỗi khi làm mịn da:", error);
         }
     }
-}
-
-// Áp dụng bộ lọc Gaussian Blur
-function applyGaussianBlur(imageData, startX, startY, width, height, radius) {
-    // Tạo kernel Gaussian
-    const kernel = createGaussianKernel(radius);
-    const kernelSize = kernel.length;
-    const halfKernelSize = Math.floor(kernelSize / 2);
-    
-    // Tạo bản sao để tính toán
-    const tempData = new Uint8ClampedArray(imageData.data.length);
-    
-    // Áp dụng blur theo chiều ngang
-    for (let y = startY; y < startY + height; y++) {
-        for (let x = startX; x < startX + width; x++) {
-            let r = 0, g = 0, b = 0;
-            let weightSum = 0;
-            
-            for (let i = -halfKernelSize; i <= halfKernelSize; i++) {
-                const pixelX = x + i;
-                if (pixelX >= 0 && pixelX < imageData.width) {
-                    const kernelValue = kernel[i + halfKernelSize];
-                    const idx = (y * imageData.width + pixelX) * 4;
-                    
-                    r += imageData.data[idx] * kernelValue;
-                    g += imageData.data[idx + 1] * kernelValue;
-                    b += imageData.data[idx + 2] * kernelValue;
-                    weightSum += kernelValue;
-                }
-            }
-            
-            const outIdx = (y * imageData.width + x) * 4;
-            tempData[outIdx] = r / weightSum;
-            tempData[outIdx + 1] = g / weightSum;
-            tempData[outIdx + 2] = b / weightSum;
-            tempData[outIdx + 3] = imageData.data[outIdx + 3]; // Giữ nguyên alpha
-        }
-    }
-    
-    // Áp dụng blur theo chiều dọc
-    for (let y = startY; y < startY + height; y++) {
-        for (let x = startX; x < startX + width; x++) {
-            let r = 0, g = 0, b = 0;
-            let weightSum = 0;
-            
-            for (let j = -halfKernelSize; j <= halfKernelSize; j++) {
-                const pixelY = y + j;
-                if (pixelY >= 0 && pixelY < imageData.height) {
-                    const kernelValue = kernel[j + halfKernelSize];
-                    const idx = (pixelY * imageData.width + x) * 4;
-                    
-                    r += tempData[idx] * kernelValue;
-                    g += tempData[idx + 1] * kernelValue;
-                    b += tempData[idx + 2] * kernelValue;
-                    weightSum += kernelValue;
-                }
-            }
-            
-            const outIdx = (y * imageData.width + x) * 4;
-            imageData.data[outIdx] = r / weightSum;
-            imageData.data[outIdx + 1] = g / weightSum;
-            imageData.data[outIdx + 2] = b / weightSum;
-        }
-    }
-}
-
-// Tạo kernel Gaussian
-function createGaussianKernel(radius) {
-    const size = radius * 2 + 1;
-    const kernel = new Array(size);
-    const sigma = radius / 3;
-    let sum = 0;
-    
-    for (let i = 0; i < size; i++) {
-        const x = i - radius;
-        kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma));
-        sum += kernel[i];
-    }
-    
-    // Chuẩn hóa kernel
-    for (let i = 0; i < size; i++) {
-        kernel[i] /= sum;
-    }
-    
-    return kernel;
-}
-
-// Kiểm tra xem điểm có nằm trong vùng khuôn mặt không
-function isInFaceRegion(x, y, detection) {
-    try {
-        // Lấy các điểm landmark
-        const landmarks = detection.landmarks;
-        
-        // Lấy các nhóm điểm quan trọng
-        const jawPositions = landmarks.getJawOutline();
-        const leftEyeBrowPositions = landmarks.getLeftEyeBrow();
-        const rightEyeBrowPositions = landmarks.getRightEyeBrow();
-        
-        // Tìm điểm cao nhất của lông mày
-        let minY = Number.MAX_VALUE;
-        for (const pos of [...leftEyeBrowPositions, ...rightEyeBrowPositions]) {
-            if (pos.y < minY) {
-                minY = pos.y;
-            }
-        }
-        
-        // Lấy điểm ngoài cùng của lông mày
-        const leftMostEyeBrow = leftEyeBrowPositions[0];
-        const rightMostEyeBrow = rightEyeBrowPositions[rightEyeBrowPositions.length - 1];
-        
-        // Tính khoảng cách từ lông mày đến jawline để ước tính chiều cao trán
-        const faceHeight = jawPositions[8].y - minY; // Từ giữa cằm đến lông mày
-        const foreheadHeight = faceHeight * 0.6; // Mở rộng lên 0.6 để trán cao hơn
-        
-        // Vị trí cao nhất của trán
-        const foreheadTopY = minY - foreheadHeight;
-        
-        // Tạo đa giác khuôn mặt từ các điểm landmark thực tế
-        const facePolygon = [];
-        
-        // Thêm các điểm jawline từ trái sang phải
-        for (const jawPos of jawPositions) {
-            facePolygon.push([jawPos.x, jawPos.y]);
-        }
-        
-        // Thêm điểm trán bên phải
-        const foreheadRightX = rightMostEyeBrow.x + 20; // Mở rộng sang phải
-        facePolygon.push([foreheadRightX, foreheadTopY]);
-        
-        // Thêm điểm giữa trán
-        facePolygon.push([(leftMostEyeBrow.x + rightMostEyeBrow.x) / 2, foreheadTopY - 20]); // Đỉnh trán cao hơn
-        
-        // Thêm điểm trán bên trái
-        const foreheadLeftX = leftMostEyeBrow.x - 20; // Mở rộng sang trái
-        facePolygon.push([foreheadLeftX, foreheadTopY]);
-        
-        // Kiểm tra nhanh - nếu điểm nằm ngoài hình chữ nhật bao quanh khuôn mặt
-        const padding = 20; // Tăng padding để đảm bảo bao quanh đủ
-        let minX = Number.MAX_VALUE, maxX = 0, maxY = 0;
-        
-        for (const [px, py] of facePolygon) {
-            if (px < minX) minX = px;
-            if (px > maxX) maxX = px;
-            if (py > maxY) maxY = py;
-        }
-        
-        // Thêm padding
-        minX -= padding;
-        maxX += padding;
-        const minYPadded = foreheadTopY - 30; // Mở rộng trán lên thêm 30px
-        maxY += padding;
-        
-        // Kiểm tra nhanh với hình chữ nhật bao quanh
-        if (x < minX || x > maxX || y < minYPadded || y > maxY) {
-            return false;
-        }
-        
-        // Kiểm tra đặc biệt cho vùng trán cao
-        if (y < minY && y >= foreheadTopY - 30 && 
-            x >= leftMostEyeBrow.x - 30 && x <= rightMostEyeBrow.x + 30) {
-            return true;
-        }
-        
-        // Kiểm tra chi tiết xem điểm có nằm trong đa giác không
-        return isPointInPolygon(x, y, facePolygon);
-    } catch (error) {
-        console.error("Lỗi khi kiểm tra vùng khuôn mặt:", error);
-        // Nếu có lỗi, trả về false để an toàn
-        return false;
-    }
-}
-
-// Kiểm tra một điểm có nằm trong đa giác hay không
-function isPointInPolygon(x, y, polygon) {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        const xi = polygon[i][0], yi = polygon[i][1];
-        const xj = polygon[j][0], yj = polygon[j][1];
-        
-        const intersect = ((yi > y) !== (yj > y))
-            && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-    }
-    return inside;
 }
 
 // Làm sáng da
@@ -829,73 +1189,188 @@ function isSkinTone(imageData, x, y) {
     return numConditionsMet >= 2;
 }
 
-// Giữ nguyên function isImprovedSkinPixel để tránh lỗi với code cũ
-function isImprovedSkinPixel(imageData, x, y) {
-    return isSkinTone(imageData, x, y);
-}
-
-// Giữ nguyên function isSkinPixel hiện tại để các phần khác của code không bị ảnh hưởng
-function isSkinPixel(imageData, x, y) {
-    return isSkinTone(imageData, x, y);
-}
-
-// Lấy màu trung bình của các pixel xung quanh
-function getAverageColor(imageData, x, y, radius) {
-    let totalR = 0, totalG = 0, totalB = 0;
-    let count = 0;
-    
-    for (let i = -radius; i <= radius; i++) {
-        for (let j = -radius; j <= radius; j++) {
-            const px = x + j;
-            const py = y + i;
-            
-            if (px >= 0 && px < imageData.width && py >= 0 && py < imageData.height) {
-                const idx = (py * imageData.width + px) * 4;
-                totalR += imageData.data[idx];
-                totalG += imageData.data[idx + 1];
-                totalB += imageData.data[idx + 2];
-                count++;
+// Kiểm tra xem điểm có nằm trong vùng khuôn mặt không
+function isInFaceRegion(x, y, detection) {
+    try {
+        // Lấy các điểm landmark
+        const landmarks = detection.landmarks;
+        
+        // Lấy các nhóm điểm quan trọng
+        const jawPositions = landmarks.getJawOutline();
+        const leftEyeBrowPositions = landmarks.getLeftEyeBrow();
+        const rightEyeBrowPositions = landmarks.getRightEyeBrow();
+        
+        // Tìm điểm cao nhất của lông mày
+        let minY = Number.MAX_VALUE;
+        for (const pos of [...leftEyeBrowPositions, ...rightEyeBrowPositions]) {
+            if (pos.y < minY) {
+                minY = pos.y;
             }
+        }
+        
+        // Lấy điểm ngoài cùng của lông mày
+        const leftMostEyeBrow = leftEyeBrowPositions[0];
+        const rightMostEyeBrow = rightEyeBrowPositions[rightEyeBrowPositions.length - 1];
+        
+        // Tính khoảng cách từ lông mày đến jawline để ước tính chiều cao trán
+        const faceHeight = jawPositions[8].y - minY; // Từ giữa cằm đến lông mày
+        const foreheadHeight = faceHeight * 0.6; // Mở rộng lên 0.6 để trán cao hơn
+        
+        // Vị trí cao nhất của trán
+        const foreheadTopY = minY - foreheadHeight;
+        
+        // Tạo đa giác khuôn mặt từ các điểm landmark thực tế
+        const facePolygon = [];
+        
+        // Thêm các điểm jawline từ trái sang phải
+        for (const jawPos of jawPositions) {
+            facePolygon.push([jawPos.x, jawPos.y]);
+        }
+        
+        // Thêm điểm trán bên phải
+        const foreheadRightX = rightMostEyeBrow.x + 20; // Mở rộng sang phải
+        facePolygon.push([foreheadRightX, foreheadTopY]);
+        
+        // Thêm điểm giữa trán
+        facePolygon.push([(leftMostEyeBrow.x + rightMostEyeBrow.x) / 2, foreheadTopY - 20]); // Đỉnh trán cao hơn
+        
+        // Thêm điểm trán bên trái
+        const foreheadLeftX = leftMostEyeBrow.x - 20; // Mở rộng sang trái
+        facePolygon.push([foreheadLeftX, foreheadTopY]);
+        
+        // Kiểm tra nhanh - nếu điểm nằm ngoài hình chữ nhật bao quanh khuôn mặt
+        const padding = 20; // Tăng padding để đảm bảo bao quanh đủ
+        let minX = Number.MAX_VALUE, maxX = 0, maxY = 0;
+        
+        for (const [px, py] of facePolygon) {
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py > maxY) maxY = py;
+        }
+        
+        // Thêm padding
+        minX -= padding;
+        maxX += padding;
+        const minYPadded = foreheadTopY - 30; // Mở rộng trán lên thêm 30px
+        maxY += padding;
+        
+        // Kiểm tra nhanh với hình chữ nhật bao quanh
+        if (x < minX || x > maxX || y < minYPadded || y > maxY) {
+            return false;
+        }
+        
+        // Kiểm tra đặc biệt cho vùng trán cao
+        if (y < minY && y >= foreheadTopY - 30 && 
+            x >= leftMostEyeBrow.x - 30 && x <= rightMostEyeBrow.x + 30) {
+            return true;
+        }
+        
+        // Kiểm tra chi tiết xem điểm có nằm trong đa giác không
+        return isPointInPolygon(x, y, facePolygon);
+    } catch (error) {
+        console.error("Lỗi khi kiểm tra vùng khuôn mặt:", error);
+        // Nếu có lỗi, trả về false để an toàn
+        return false;
+    }
+}
+
+// Kiểm tra một điểm có nằm trong đa giác hay không
+function isPointInPolygon(x, y, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i][0], yi = polygon[i][1];
+        const xj = polygon[j][0], yj = polygon[j][1];
+        
+        const intersect = ((yi > y) !== (yj > y))
+            && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+// Áp dụng bộ lọc Gaussian Blur
+function applyGaussianBlur(imageData, startX, startY, width, height, radius) {
+    // Tạo kernel Gaussian
+    const kernel = createGaussianKernel(radius);
+    const kernelSize = kernel.length;
+    const halfKernelSize = Math.floor(kernelSize / 2);
+    
+    // Tạo bản sao để tính toán
+    const tempData = new Uint8ClampedArray(imageData.data.length);
+    
+    // Áp dụng blur theo chiều ngang
+    for (let y = startY; y < startY + height; y++) {
+        for (let x = startX; x < startX + width; x++) {
+            let r = 0, g = 0, b = 0;
+            let weightSum = 0;
+            
+            for (let i = -halfKernelSize; i <= halfKernelSize; i++) {
+                const pixelX = x + i;
+                if (pixelX >= 0 && pixelX < imageData.width) {
+                    const kernelValue = kernel[i + halfKernelSize];
+                    const idx = (y * imageData.width + pixelX) * 4;
+                    
+                    r += imageData.data[idx] * kernelValue;
+                    g += imageData.data[idx + 1] * kernelValue;
+                    b += imageData.data[idx + 2] * kernelValue;
+                    weightSum += kernelValue;
+                }
+            }
+            
+            const outIdx = (y * imageData.width + x) * 4;
+            tempData[outIdx] = r / weightSum;
+            tempData[outIdx + 1] = g / weightSum;
+            tempData[outIdx + 2] = b / weightSum;
+            tempData[outIdx + 3] = imageData.data[outIdx + 3]; // Giữ nguyên alpha
         }
     }
     
-    return {
-        r: Math.round(totalR / count),
-        g: Math.round(totalG / count),
-        b: Math.round(totalB / count)
-    };
-}
-
-// Tải ảnh xuống
-function downloadPhoto() {
-    try {
-        const link = document.createElement('a');
-        link.download = 'photo-booth-ai-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.png';
-        link.href = photoCanvas.toDataURL('image/png');
-        link.click();
-        
-        showStatus('Ảnh đã được tải xuống!', false);
-    } catch (error) {
-        console.error('Lỗi khi tải ảnh xuống:', error);
-        showStatus('Không thể tải ảnh xuống: ' + error.message, true);
+    // Áp dụng blur theo chiều dọc
+    for (let y = startY; y < startY + height; y++) {
+        for (let x = startX; x < startX + width; x++) {
+            let r = 0, g = 0, b = 0;
+            let weightSum = 0;
+            
+            for (let j = -halfKernelSize; j <= halfKernelSize; j++) {
+                const pixelY = y + j;
+                if (pixelY >= 0 && pixelY < imageData.height) {
+                    const kernelValue = kernel[j + halfKernelSize];
+                    const idx = (pixelY * imageData.width + x) * 4;
+                    
+                    r += tempData[idx] * kernelValue;
+                    g += tempData[idx + 1] * kernelValue;
+                    b += tempData[idx + 2] * kernelValue;
+                    weightSum += kernelValue;
+                }
+            }
+            
+            const outIdx = (y * imageData.width + x) * 4;
+            imageData.data[outIdx] = r / weightSum;
+            imageData.data[outIdx + 1] = g / weightSum;
+            imageData.data[outIdx + 2] = b / weightSum;
+        }
     }
 }
 
-// Reset về trạng thái ban đầu
-function resetPhoto() {
-    photoCtx.clearRect(0, 0, photoCanvas.width, photoCanvas.height);
-    capturedImage = null;
+// Tạo kernel Gaussian
+function createGaussianKernel(radius) {
+    const size = radius * 2 + 1;
+    const kernel = new Array(size);
+    const sigma = radius / 3;
+    let sum = 0;
     
-    beautifyBtn.disabled = true;
-    downloadBtn.disabled = true;
-    retryBtn.disabled = true;
+    for (let i = 0; i < size; i++) {
+        const x = i - radius;
+        kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma));
+        sum += kernel[i];
+    }
     
-    showStatus('Sẵn sàng chụp ảnh mới', false);
-}
-
-// Hiển thị/ẩn màn hình loading
-function showLoading(show) {
-    loadingElement.style.display = show ? 'flex' : 'none';
+    // Chuẩn hóa kernel
+    for (let i = 0; i < size; i++) {
+        kernel[i] /= sum;
+    }
+    
+    return kernel;
 }
 
 // Dọn dẹp khi người dùng rời trang
@@ -903,4 +1378,357 @@ window.addEventListener('beforeunload', () => {
     if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
     }
-}); 
+});
+
+// Hàm hiển thị màn hình cài đặt
+function showSettingsScreen() {
+    // Tải cài đặt đã lưu
+    loadSettings();
+    
+    // Hiển thị màn hình cài đặt
+    showScreen('settings');
+}
+
+// Hàm ẩn màn hình cài đặt
+function hideSettingsScreen() {
+    showScreen('welcome');
+}
+
+// Hàm lưu cài đặt
+function saveSettings() {
+    // Lấy giá trị từ form
+    webhookUrl = webhookUrlInput.value.trim();
+    webhookEnabled = enableWebhookCheckbox.checked;
+    
+    // Lưu vào localStorage
+    localStorage.setItem('webhookUrl', webhookUrl);
+    localStorage.setItem('webhookEnabled', webhookEnabled.toString());
+    
+    showStatus('Đã lưu cài đặt', false);
+    setTimeout(() => {
+        hideSettingsScreen();
+    }, 1000);
+}
+
+// Hàm tải cài đặt đã lưu
+function loadSettings() {
+    // Tải từ localStorage
+    webhookUrl = localStorage.getItem('webhookUrl') || '';
+    webhookEnabled = localStorage.getItem('webhookEnabled') === 'true';
+    
+    // Cập nhật UI
+    webhookUrlInput.value = webhookUrl;
+    enableWebhookCheckbox.checked = webhookEnabled;
+}
+
+// Hàm kiểm tra kết nối API
+async function testApiConnection() {
+    try {
+        apiStatusText.textContent = 'Đang kiểm tra...';
+        apiStatusText.className = '';
+        
+        // Vì đây là API demo, chúng ta sẽ giả lập kết nối thành công
+        setTimeout(() => {
+            apiStatusText.textContent = 'Đã kết nối thành công';
+            apiStatusText.className = 'connected';
+        }, 1500);
+        
+        /*
+        // Trong môi trường thực tế, bạn sẽ gọi API thực sự
+        const response = await fetch(apiUrl + '/status', {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            apiStatusText.textContent = 'Đã kết nối thành công';
+            apiStatusText.className = 'connected';
+        } else {
+            apiStatusText.textContent = 'Lỗi: ' + response.status;
+            apiStatusText.className = 'error';
+        }
+        */
+    } catch (error) {
+        apiStatusText.textContent = 'Lỗi: ' + error.message;
+        apiStatusText.className = 'error';
+    }
+}
+
+// Hàm tải khung hình từ API
+async function loadFramesFromAPI() {
+    if (apiFrameStatus) {
+        apiFrameStatus.textContent = 'Đang tải khung hình...';
+    }
+    
+    try {
+        showLoading(true, 'Đang tải khung hình từ API...');
+        
+        // Vì đây là demo, chúng ta sẽ giả lập việc tải khung hình
+        // Trong môi trường thực tế, bạn sẽ gọi API thực sự
+        
+        // Chờ 2 giây để giả lập việc tải
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Khung hình giả định từ API
+        const apiFrames = [
+            { name: 'api-new-year', src: 'frames/new-year.png', title: 'Năm mới (API)' },
+            { name: 'api-flower', src: 'frames/photo-story.png', title: 'Hoa (API)' },
+            { name: 'api-birthday', src: 'frames/friendship.png', title: 'Sinh nhật (API)' }
+        ];
+        
+        let newFramesCount = 0;
+        
+        // Thêm khung hình mới vào mảng frames
+        for (const apiFrame of apiFrames) {
+            // Kiểm tra xem khung hình đã tồn tại chưa
+            const exists = frames.some(frame => frame.name === apiFrame.name);
+            if (!exists) {
+                frames.push({
+                    name: apiFrame.name,
+                    src: apiFrame.src,
+                    image: null,
+                    title: apiFrame.title
+                });
+                newFramesCount++;
+            }
+        }
+        
+        if (newFramesCount > 0) {
+            // Tải trước các khung hình mới
+            await preloadFrames();
+            
+            // Cập nhật giao diện người dùng
+            updateFrameSelector();
+            
+            if (apiFrameStatus) {
+                apiFrameStatus.textContent = `Đã tải thêm ${newFramesCount} khung hình mới`;
+            }
+            showStatus(`Đã tải thêm ${newFramesCount} khung hình mới`, false);
+        } else {
+            if (apiFrameStatus) {
+                apiFrameStatus.textContent = 'Không có khung hình mới để tải';
+            }
+            showStatus('Không có khung hình mới để tải', false);
+        }
+    } catch (error) {
+        console.error('Lỗi khi tải khung hình từ API:', error);
+        if (apiFrameStatus) {
+            apiFrameStatus.textContent = `Lỗi: ${error.message}`;
+        }
+        showStatus(`Không thể tải khung hình: ${error.message}`, true);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Cập nhật giao diện bộ chọn khung hình
+function updateFrameSelector() {
+    const frameSelector = document.querySelector('.frame-selector');
+    
+    // Xóa tất cả nút khung hình hiện tại
+    while (frameSelector.firstChild) {
+        frameSelector.removeChild(frameSelector.firstChild);
+    }
+    
+    // Thêm nút cho mỗi khung hình
+    frames.forEach((frame, index) => {
+        const option = document.createElement('button');
+        option.className = 'frame-option' + (index === selectedFrameIndex ? ' active' : '');
+        option.setAttribute('data-frame', frame.name);
+        
+        const img = document.createElement('img');
+        img.src = frame.src;
+        img.alt = frame.title || frame.name;
+        
+        option.appendChild(img);
+        
+        // Thêm sự kiện click
+        option.addEventListener('click', () => selectFrame(index));
+        
+        frameSelector.appendChild(option);
+    });
+}
+
+// Gửi thông báo webhook khi có ảnh mới
+async function sendWebhookNotification(imageUrl, metadata = {}) {
+    // Kiểm tra xem webhook có được bật không
+    if (!webhookEnabled || !webhookUrl) {
+        console.log('Webhook không được bật hoặc URL chưa được cấu hình');
+        return;
+    }
+    
+    try {
+        console.log('Gửi thông báo webhook đến:', webhookUrl);
+        console.log('Dữ liệu:', {
+            event: 'photo_captured',
+            timestamp: new Date().toISOString(),
+            imageUrl: imageUrl.substring(0, 50) + '...',
+            ...metadata
+        });
+        
+        // Trong môi trường thực tế, bạn sẽ gửi yêu cầu thực sự
+        /*
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                event: 'photo_captured',
+                timestamp: new Date().toISOString(),
+                imageUrl: imageUrl,
+                ...metadata
+            }),
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        */
+        
+        console.log('Webhook notification sent successfully');
+    } catch (error) {
+        console.error('Failed to send webhook notification:', error);
+    }
+}
+
+// Khởi tạo API listener
+function initApiListener() {
+    // Lắng nghe tin nhắn từ cửa sổ cha (khi được nhúng trong iframe)
+    window.addEventListener('message', (event) => {
+        // Xử lý lệnh từ xa
+        handleRemoteCommand(event.data);
+    });
+    
+    // Lắng nghe yêu cầu API thông qua localStorage events
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'photobooth_api_command') {
+            try {
+                const command = JSON.parse(event.newValue);
+                handleRemoteCommand(command);
+            } catch (error) {
+                console.error('Invalid API command format:', error);
+            }
+        }
+    });
+    
+    console.log('API listener initialized');
+}
+
+// Xử lý lệnh từ xa
+function handleRemoteCommand(command) {
+    if (!command || typeof command !== 'object') return;
+    
+    console.log('Received remote command:', command);
+    
+    switch (command.action) {
+        case 'capture':
+            if (currentScreen === 'capture' && !isProcessing) {
+                startCountdown();
+            }
+            break;
+            
+        case 'retake':
+            if (currentScreen === 'capture') {
+                retakePhotos();
+            }
+            break;
+            
+        case 'continue':
+            if (currentScreen === 'capture' && currentPhotoIndex === 4) {
+                showEditScreen();
+            }
+            break;
+            
+        case 'selectFrame':
+            if (currentScreen === 'edit' && typeof command.frameIndex === 'number') {
+                selectFrame(command.frameIndex);
+            }
+            break;
+            
+        case 'toggleBeautify':
+            if (currentScreen === 'edit' && typeof command.enabled === 'boolean') {
+                beautifyToggle.checked = command.enabled;
+                isBeautifyEnabled = command.enabled;
+                renderPreviewPhoto();
+            }
+            break;
+            
+        case 'savePhoto':
+            if (currentScreen === 'edit') {
+                savePhoto();
+            }
+            break;
+            
+        case 'downloadPhoto':
+            if (currentScreen === 'result') {
+                downloadPhoto();
+            }
+            break;
+            
+        case 'newSession':
+            startNewSession();
+            break;
+            
+        case 'setWebhookUrl':
+            if (command.url) {
+                localStorage.setItem('webhookUrl', command.url);
+                webhookUrl = command.url;
+                if (webhookUrlInput) {
+                    webhookUrlInput.value = command.url;
+                }
+                console.log('Webhook URL updated:', command.url);
+            }
+            break;
+            
+        default:
+            console.warn('Unknown remote command:', command.action);
+    }
+}
+
+// Thêm hàm kiểm tra trạng thái khung ảnh
+function checkFrameStatus() {
+    console.log('Đang kiểm tra trạng thái khung ảnh');
+    
+    showStatus('Chỉ sử dụng khung ảnh CSS dễ thương, bỏ qua khung ảnh từ API', false);
+    
+    // Load preset trước khi render
+    useCuteFrame = true;
+    if (window.CuteFrames && window.CuteFrames.FRAME_TYPES) {
+        selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
+    }
+}
+
+// Cập nhật initCuteFrames để thêm kiểm tra
+function initCuteFrames() {
+    // Kiểm tra nếu CuteFrames đã tải
+    if (window.CuteFrames) {
+        cuteFrameSelector = document.getElementById('cute-frame-selector');
+        if (cuteFrameSelector) {
+            // Tạo preview cho các kiểu khung
+            window.CuteFrames.createFramePreview(cuteFrameSelector, (frame, index) => {
+                // Callback khi chọn khung ảnh
+                selectedCuteFrameType = frame.type;
+                useCuteFrame = true;
+                
+                // Bỏ trạng thái active từ khung ảnh thông thường
+                document.querySelectorAll('.frame-selector .frame-option').forEach(option => {
+                    option.classList.remove('active');
+                });
+                
+                // Render lại ảnh với khung mới
+                renderPreviewPhoto();
+            });
+            
+            // Chọn khung ảnh CSS mặc định
+            useCuteFrame = true;
+            selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
+            
+            // Kiểm tra trạng thái khung ảnh
+            checkFrameStatus();
+        }
+    } else {
+        console.warn('CuteFrames chưa được tải.');
+    }
+}  
