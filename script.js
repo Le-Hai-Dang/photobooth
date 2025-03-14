@@ -64,6 +64,8 @@ const thumbnailCtx = thumbnailCanvas.map(canvas => canvas.getContext('2d'));
 // Audio
 const countdownSound = document.getElementById('countdown-sound');
 const shutterSound = document.getElementById('shutter-sound');
+const backgroundMusic = document.getElementById('background-music');
+let isMusicPlaying = false;
 
 // Khung ảnh
 const frameOptions = document.querySelectorAll('.frame-option');
@@ -88,6 +90,26 @@ const apiUrlInput = document.getElementById('api-url');
 const testApiBtn = document.getElementById('test-api-btn');
 const apiStatusText = document.getElementById('api-status-text');
 const loadApiFramesBtn = document.getElementById('load-api-frames');
+const musicControlBtn = document.getElementById('music-control');
+
+// Thông tin về các khung ảnh
+const FRAME_INFO = [
+    {
+        id: 'pink-vertical-strip',
+        name: 'Dải dọc hồng',
+        type: FRAME_TYPES.VERTICAL_STRIP,
+        previewSrc: 'frame-templates/assets/lace-border.svg',
+        slots: 4
+    },
+    // ... existing code ...
+];
+
+// Cập nhật hiển thị số ảnh đã chụp
+function updatePhotoCounter() {
+    if (currentPhotoElement) {
+        currentPhotoElement.textContent = currentPhotoIndex.toString();
+    }
+}
 
 // Khởi tạo
 document.addEventListener('DOMContentLoaded', async () => {
@@ -200,6 +222,23 @@ function setupEventListeners() {
     captureBtn.addEventListener('click', startCountdown);
     retakeBtn.addEventListener('click', retakePhotos);
     
+    // Nút điều khiển nhạc nền
+    if (musicControlBtn) {
+        musicControlBtn.addEventListener('click', () => {
+            try {
+                toggleBackgroundMusic();
+                // Thêm/xóa class muted để thay đổi style
+                if (isMusicPlaying) {
+                    musicControlBtn.classList.remove('muted');
+                } else {
+                    musicControlBtn.classList.add('muted');
+                }
+            } catch (error) {
+                console.warn('Không thể điều khiển nhạc:', error);
+            }
+        });
+    }
+    
     // Lựa chọn khung
     frameOptions.forEach((option, index) => {
         option.addEventListener('click', () => {
@@ -285,40 +324,39 @@ function showScreen(screenName) {
 // Bắt đầu phiên chụp
 async function startCaptureSession() {
     try {
-        // Khởi tạo webcam nếu chưa
-        if (!video.srcObject) {
-            showStatus('Đang kết nối với camera...', false);
-            await setupWebcam();
-        }
+        showStatus('Đang khởi tạo camera...', false);
+        await setupWebcam();
+        showScreen('capture'); // Thêm dòng này để chuyển sang màn hình chụp
+        showStatus('', false);
         
-        // Hiển thị màn hình chụp
-        showScreen('capture');
+        // Phát nhạc nền khi bắt đầu phiên chụp nếu có
+        if (backgroundMusic && !isMusicPlaying) {
+            try {
+                toggleBackgroundMusic();
+            } catch (error) {
+                console.warn('Không thể phát nhạc nền:', error);
+            }
+        }
         
         // Reset các biến
         currentPhotoIndex = 0;
-        capturedPhotos = [null, null, null, null];
-        currentPhotoElement.textContent = currentPhotoIndex.toString();
+        thumbnailCanvas.forEach(canvas => {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
         
-        // Xóa nội dung các thumbnail
-        for (let i = 0; i < 4; i++) {
-            const thumbnail = document.getElementById(`thumbnail-${i + 1}`);
-            thumbnail.classList.remove('filled');
-            thumbnail.classList.remove('active');
-            thumbnailCtx[i].clearRect(0, 0, thumbnailCanvas[i].width, thumbnailCanvas[i].height);
-        }
+        // Cập nhật UI
+        updatePhotoCounter();
+        document.querySelectorAll('.thumbnail').forEach(thumb => {
+            thumb.classList.remove('filled', 'active');
+        });
         
-        // Cập nhật giao diện nút
-        captureBtn.classList.remove('hidden');
         retakeBtn.classList.add('hidden');
         continueBtn.classList.add('hidden');
         
-        // Bắt đầu phát hiện khuôn mặt
-        detectFaces();
-        
-        showStatus('Hãy tạo dáng và nhấn nút "Chụp ảnh"', false);
     } catch (error) {
-        console.error('Lỗi khi bắt đầu phiên chụp:', error);
-        showStatus('Không thể bắt đầu phiên chụp: ' + error.message, true);
+        console.error('Lỗi khi khởi tạo phiên chụp:', error);
+        showStatus('Không thể khởi tạo camera. Vui lòng thử lại.', true);
     }
 }
 
@@ -465,7 +503,7 @@ function capturePhoto() {
             // Cho phép chụp ảnh tiếp theo
             isProcessing = false;
         }
-    } catch (error) {
+                } catch (error) {
         console.error('Lỗi khi chụp ảnh:', error);
         showStatus('Không thể chụp ảnh: ' + error.message, true);
         isProcessing = false;
@@ -497,30 +535,112 @@ function retakePhotos() {
 
 // Hiển thị màn hình chỉnh sửa
 function showEditScreen() {
-    showScreen('edit');
-    
-    // Ẩn phần khung ảnh mặc định và nút tải từ API
-    const defaultFrames = document.querySelector('.default-frames');
-    if (defaultFrames) {
-        defaultFrames.style.display = 'none';
+    try {
+        console.log('Chuyển sang màn hình chỉnh sửa');
+        
+        // Kiểm tra xem có ảnh nào không
+        let hasAnyImage = false;
+        for (let i = 0; i < 4; i++) {
+            if (capturedPhotos[i]) {
+                hasAnyImage = true;
+                break;
+            }
+        }
+        
+        if (!hasAnyImage) {
+            console.error('Không có ảnh nào để chỉnh sửa');
+            showStatus('Không có ảnh nào để chỉnh sửa. Vui lòng chụp ảnh trước.', true);
+            return;
+        }
+        
+        showLoading(true, 'Đang chuẩn bị ảnh...');
+        
+        // Dừng nhạc nền khi kết thúc phiên chụp
+        if (backgroundMusic && isMusicPlaying) {
+            try {
+                toggleBackgroundMusic();
+                if (musicControlBtn) {
+                    musicControlBtn.classList.add('muted');
+                }
+            } catch (error) {
+                console.warn('Không thể dừng nhạc nền:', error);
+            }
+        }
+        
+        // Dừng webcam
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Hiển thị màn hình chỉnh sửa
+        showScreen('edit-screen');
+        
+        // Đặt khung ảnh mặc định
+        try {
+            if (window.CuteFrames && window.CuteFrames.FRAME_TYPES) {
+                useCuteFrame = true;
+                selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
+                
+                // Cập nhật UI
+                const framePreviewItems = document.querySelectorAll('#cute-frame-selector .frame-preview');
+                if (framePreviewItems && framePreviewItems.length > 0) {
+                    framePreviewItems.forEach((item, index) => {
+                        if (index === 0) {
+                            item.classList.add('active');
+                        } else {
+                            item.classList.remove('active');
+                        }
+                    });
+                }
+                
+                // Bỏ active từ khung ảnh thông thường
+                const frameOptions = document.querySelectorAll('.frame-selector .frame-option');
+                if (frameOptions && frameOptions.length > 0) {
+                    frameOptions.forEach(option => {
+                        option.classList.remove('active');
+                    });
+                }
+            } else {
+                // Nếu CuteFrames không tồn tại, sử dụng khung thông thường
+                useCuteFrame = false;
+                selectedFrameIndex = 0;
+                
+                // Cập nhật UI
+                const frameOptions = document.querySelectorAll('.frame-selector .frame-option');
+                if (frameOptions && frameOptions.length > 0) {
+                    frameOptions.forEach((option, index) => {
+                        if (index === 0) {
+                            option.classList.add('active');
+                        } else {
+                            option.classList.remove('active');
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Lỗi khi thiết lập khung ảnh mặc định:', error);
+            // Nếu lỗi, sử dụng khung thông thường
+            useCuteFrame = false;
+            selectedFrameIndex = 0;
+        }
+        
+        console.log('Render ảnh preview');
+        // Render ảnh preview
+        setTimeout(() => {
+            try {
+                renderPreviewPhoto();
+                showLoading(false);
+            } catch (error) {
+                console.error('Lỗi khi render ảnh preview:', error);
+                showLoading(false);
+                showStatus('Có lỗi khi hiển thị ảnh preview', true);
+            }
+        }, 500);
+    } catch (error) {
+        console.error('Lỗi khi chuyển sang màn hình chỉnh sửa:', error);
+        showLoading(false);
+        showStatus('Lỗi khi chuyển sang màn hình chỉnh sửa: ' + error.message, true);
     }
-    
-    const loadApiFramesBtn = document.getElementById('load-api-frames');
-    if (loadApiFramesBtn) {
-        loadApiFramesBtn.style.display = 'none';
-    }
-    
-    // Chỉ sử dụng khung ảnh dễ thương CSS
-    useCuteFrame = true;
-    
-    // Khung ảnh đầu tiên là lưới 2x2
-    selectedCuteFrameType = FRAME_TYPES.GRID_2X2;
-    
-    // Đặt toggle làm đẹp mặc định là true
-    beautifyToggle.checked = true;
-    isBeautifyEnabled = true;
-    
-    showStatus('Chọn khung ảnh và tùy chọn làm đẹp', false);
 }
 
 // Hiển thị màn hình chụp
@@ -554,25 +674,87 @@ function selectFrame(index) {
 
 // Render ảnh với khung đã chọn
 function renderPreviewPhoto() {
-    if (!capturedPhotos[0]) return;
+    if (!capturedPhotos[0]) {
+        console.warn('Không có ảnh nào để hiển thị trong preview');
+        return;
+    }
     
-    // Xóa canvas
-    previewCtx.clearRect(0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
-    
-    if (useCuteFrame && selectedCuteFrameType) {
-        // Sử dụng khung ảnh dễ thương
-        window.CuteFrames.renderToCanvas(photoPreviewCanvas, selectedCuteFrameType, capturedPhotos)
-            .then(() => {
-                console.log('Khung ảnh dễ thương đã được render');
-            })
-            .catch(error => {
-                console.error('Lỗi khi render khung ảnh dễ thương:', error);
+    try {
+        console.log('Đang render ảnh preview với các ảnh đã chụp:', capturedPhotos.length);
+        
+        // Xóa canvas
+        previewCtx.clearRect(0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+        
+        // Đảm bảo canvas có kích thước đúng
+        photoPreviewCanvas.width = 600;
+        photoPreviewCanvas.height = 800;
+        
+        // Vẽ nền trắng
+        previewCtx.fillStyle = '#ffffff';
+        previewCtx.fillRect(0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+        
+        // Kiểm tra CuteFrames đã tải chưa
+        if (useCuteFrame && selectedCuteFrameType && window.CuteFrames) {
+            console.log('Sử dụng khung CuteFrames với loại:', selectedCuteFrameType);
+            
+            try {
+                // Tạo collage trước
+                createCollage().then(collageImg => {
+                    try {
+                        // Nếu không dùng được CuteFrames, sẽ dùng phương pháp thông thường
+                        if (!window.CuteFrames.renderToCanvas) {
+                            console.warn('Không tìm thấy phương thức renderToCanvas, dùng render thông thường');
+                            // Vẽ ảnh ghép lên canvas
+                            previewCtx.drawImage(collageImg, 0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+                            return;
+                        }
+                        
+                        // Sử dụng phương thức renderToCanvas của CuteFrames
+                        window.CuteFrames.renderToCanvas(photoPreviewCanvas, selectedCuteFrameType, capturedPhotos)
+                            .then(() => {
+                                console.log('Khung ảnh dễ thương đã được render thành công');
+                            })
+                            .catch(error => {
+                                console.error('Lỗi khi render khung ảnh dễ thương:', error);
+                                // Fallback về render thông thường khi có lỗi
+                                previewCtx.drawImage(collageImg, 0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+                            });
+                    } catch (error) {
+                        console.error('Lỗi khi render với CuteFrames:', error);
+                        // Fallback về render thông thường khi có lỗi
+                        previewCtx.drawImage(collageImg, 0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+                    }
+                }).catch(error => {
+                    console.error('Lỗi khi tạo collage:', error);
+                    // Vẽ thông báo lỗi lên canvas
+                    previewCtx.fillStyle = '#ffeeee';
+                    previewCtx.fillRect(0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+                    previewCtx.fillStyle = '#ff0000';
+                    previewCtx.font = '24px Arial';
+                    previewCtx.textAlign = 'center';
+                    previewCtx.fillText('Lỗi khi tạo ảnh ghép', photoPreviewCanvas.width/2, photoPreviewCanvas.height/2);
+                });
+            } catch (error) {
+                console.error('Lỗi khi render preview với CuteFrames:', error);
                 // Fallback về cách render thông thường
                 renderNormalFrame();
-            });
-    } else {
-        // Sử dụng khung ảnh thông thường
-        renderNormalFrame();
+            }
+        } else {
+            console.log('Sử dụng khung ảnh thông thường');
+            // Sử dụng khung ảnh thông thường
+            renderNormalFrame();
+        }
+    } catch (error) {
+        console.error('Lỗi trong renderPreviewPhoto:', error);
+        showStatus('Có lỗi khi hiển thị ảnh preview', true);
+        
+        // Vẽ thông báo lỗi lên canvas
+        previewCtx.fillStyle = '#ffeeee';
+        previewCtx.fillRect(0, 0, photoPreviewCanvas.width, photoPreviewCanvas.height);
+        previewCtx.fillStyle = '#ff0000';
+        previewCtx.font = '24px Arial';
+        previewCtx.textAlign = 'center';
+        previewCtx.fillText('Lỗi khi hiển thị ảnh preview', photoPreviewCanvas.width/2, photoPreviewCanvas.height/2);
     }
 }
 
@@ -597,47 +779,41 @@ function renderNormalFrame() {
 // Tạo ảnh ghép từ 4 ảnh đã chụp
 async function createCollage() {
     return new Promise((resolve) => {
-        const collageCanvas = document.createElement('canvas');
-        collageCanvas.width = photoPreviewCanvas.width;
-        collageCanvas.height = photoPreviewCanvas.height;
-        const ctx = collageCanvas.getContext('2d');
-        
-        // Chia canvas thành 4 phần
-        const cellWidth = collageCanvas.width / 2;
-        const cellHeight = collageCanvas.height / 2;
-        
-        // Tải 4 ảnh
-        let loadedImages = 0;
-        const images = [];
-        
-        for (let i = 0; i < 4; i++) {
-            if (capturedPhotos[i]) {
-                const img = new Image();
-                img.onload = () => {
-                    images[i] = img;
-                    loadedImages++;
-                    
-                    if (loadedImages === 4) {
-                        drawCollage();
-                    }
-                };
-                img.src = capturedPhotos[i];
-            } else {
-                // Nếu chưa có ảnh, tạo ảnh trống
-                images[i] = null;
-                loadedImages++;
-            }
-        }
-        
-        // Nếu đã tải đủ ảnh, vẽ collage
-        if (loadedImages === 4) {
-            drawCollage();
-        }
-        
-        function drawCollage() {
+        try {
+            const collageCanvas = document.createElement('canvas');
+            collageCanvas.width = photoPreviewCanvas.width;
+            collageCanvas.height = photoPreviewCanvas.height;
+            const ctx = collageCanvas.getContext('2d');
+            
             // Vẽ nền
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, collageCanvas.width, collageCanvas.height);
+            
+            // Chia canvas thành 4 phần
+            const cellWidth = collageCanvas.width / 2;
+            const cellHeight = collageCanvas.height / 2;
+            
+            // Kiểm tra xem có ảnh nào không
+            let hasAnyImage = false;
+            for (let i = 0; i < 4; i++) {
+                if (capturedPhotos[i]) {
+                    hasAnyImage = true;
+                    break;
+                }
+            }
+            
+            if (!hasAnyImage) {
+                console.error('Không có ảnh nào để tạo collage');
+                // Vẽ nền trắng và thông báo
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, collageCanvas.width, collageCanvas.height);
+                ctx.fillStyle = '#ff0000';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Không có ảnh nào để hiển thị', collageCanvas.width/2, collageCanvas.height/2);
+                resolve(collageCanvas);
+                return;
+            }
             
             // Vị trí của 4 ảnh
             const positions = [
@@ -647,53 +823,121 @@ async function createCollage() {
                 { x: cellWidth, y: cellHeight }
             ];
             
-            // Vẽ 4 ảnh
+            let loadedImages = 0;
+            const totalImages = capturedPhotos.filter(img => img !== null).length;
+            
+            // Vẽ các ô trước
             for (let i = 0; i < 4; i++) {
-                if (images[i]) {
-                    const pos = positions[i];
-                    
-                    // Tính toán tỷ lệ khung hình
-                    const imgAspect = images[i].height / images[i].width;
-                    const cellAspect = cellHeight / cellWidth;
-                    
-                    let sw, sh, sx, sy;
-                    
-                    if (imgAspect > cellAspect) {
-                        // Ảnh cao hơn, cắt trên dưới
-                        sw = images[i].width;
-                        sh = images[i].width * cellAspect;
-                        sx = 0;
-                        sy = (images[i].height - sh) / 2;
-                    } else {
-                        // Ảnh rộng hơn, cắt trái phải
-                        sh = images[i].height;
-                        sw = images[i].height / cellAspect;
-                        sx = (images[i].width - sw) / 2;
-                        sy = 0;
-                    }
-                    
-                    // Vẽ ảnh đã cắt
-                    ctx.drawImage(
-                        images[i],
-                        sx, sy, sw, sh,
-                        pos.x, pos.y, cellWidth, cellHeight
-                    );
-                    
-                    // Nếu làm đẹp được bật, áp dụng bộ lọc
-                    if (isBeautifyEnabled) {
-                        // Lấy dữ liệu hình ảnh từ vùng vừa vẽ
-                        const imageData = ctx.getImageData(pos.x, pos.y, cellWidth, cellHeight);
+                const pos = positions[i];
+                ctx.fillStyle = '#f5f5f5';
+                ctx.fillRect(pos.x, pos.y, cellWidth, cellHeight);
+                ctx.strokeStyle = '#cccccc';
+                ctx.strokeRect(pos.x, pos.y, cellWidth, cellHeight);
+            }
+            
+            // Nếu không có ảnh nào, trả về canvas ngay
+            if (totalImages === 0) {
+                resolve(collageCanvas);
+                return;
+            }
+            
+            // Tải và vẽ từng ảnh
+            for (let i = 0; i < 4; i++) {
+                if (capturedPhotos[i]) {
+                    const img = new Image();
+                    img.onload = () => {
+                        try {
+                            const pos = positions[i];
+                            
+                            // Tính toán tỷ lệ khung hình
+                            const imgAspect = img.height / img.width;
+                            const cellAspect = cellHeight / cellWidth;
+                            
+                            let sw, sh, sx, sy;
+                            
+                            if (imgAspect > cellAspect) {
+                                // Ảnh cao hơn, cắt trên dưới
+                                sw = img.width;
+                                sh = img.width * cellAspect;
+                                sx = 0;
+                                sy = (img.height - sh) / 2;
+                            } else {
+                                // Ảnh rộng hơn, cắt trái phải
+                                sh = img.height;
+                                sw = img.height / cellAspect;
+                                sx = (img.width - sw) / 2;
+                                sy = 0;
+                            }
+                            
+                            // Vẽ ảnh đã cắt
+                            ctx.drawImage(
+                                img,
+                                sx, sy, sw, sh,
+                                pos.x, pos.y, cellWidth, cellHeight
+                            );
+                        } catch (error) {
+                            console.error(`Lỗi khi vẽ ảnh thứ ${i+1}:`, error);
+                            // Vẽ ô lỗi
+                            const pos = positions[i];
+                            ctx.fillStyle = '#ffeeee';
+                            ctx.fillRect(pos.x, pos.y, cellWidth, cellHeight);
+                            ctx.fillStyle = '#ff0000';
+                            ctx.font = '16px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('Lỗi ảnh', pos.x + cellWidth/2, pos.y + cellHeight/2);
+                        }
                         
-                        // Áp dụng bộ lọc làm đẹp cơ bản (tăng độ sáng và độ tương phản)
-                        applyBeautyFilter(imageData);
+                        loadedImages++;
+                        if (loadedImages === totalImages) {
+                            resolve(collageCanvas);
+                        }
+                    };
+                    
+                    img.onerror = () => {
+                        console.error(`Lỗi khi tải ảnh thứ ${i+1}`);
+                        // Vẽ ô lỗi
+                        const pos = positions[i];
+                        ctx.fillStyle = '#ffeeee';
+                        ctx.fillRect(pos.x, pos.y, cellWidth, cellHeight);
+                        ctx.fillStyle = '#ff0000';
+                        ctx.font = '16px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Lỗi ảnh', pos.x + cellWidth/2, pos.y + cellHeight/2);
                         
-                        // Đặt dữ liệu hình ảnh đã xử lý trở lại
-                        ctx.putImageData(imageData, pos.x, pos.y);
-                    }
+                        loadedImages++;
+                        if (loadedImages === totalImages) {
+                            resolve(collageCanvas);
+                        }
+                    };
+                    
+                    img.src = capturedPhotos[i];
                 }
             }
             
-            resolve(collageCanvas);
+            // Phòng trường hợp tất cả ảnh đều lỗi, đảm bảo sẽ resolve
+            setTimeout(() => {
+                if (loadedImages < totalImages) {
+                    console.warn('Một số ảnh không tải được, trả về collage không đầy đủ');
+                    resolve(collageCanvas);
+                }
+            }, 3000);
+        } catch (error) {
+            console.error('Lỗi trong createCollage:', error);
+            // Tạo canvas lỗi để trả về
+            const errorCanvas = document.createElement('canvas');
+            errorCanvas.width = photoPreviewCanvas.width;
+            errorCanvas.height = photoPreviewCanvas.height;
+            const ctx = errorCanvas.getContext('2d');
+            
+            // Vẽ nền lỗi
+            ctx.fillStyle = '#ffeeee';
+            ctx.fillRect(0, 0, errorCanvas.width, errorCanvas.height);
+            ctx.fillStyle = '#ff0000';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Lỗi khi tạo collage', errorCanvas.width/2, errorCanvas.height/2);
+            
+            resolve(errorCanvas);
         }
     });
 }
@@ -1378,7 +1622,7 @@ window.addEventListener('beforeunload', () => {
     if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
     }
-});
+}); 
 
 // Hàm hiển thị màn hình cài đặt
 function showSettingsScreen() {
@@ -1689,46 +1933,74 @@ function handleRemoteCommand(command) {
 
 // Thêm hàm kiểm tra trạng thái khung ảnh
 function checkFrameStatus() {
-    console.log('Đang kiểm tra trạng thái khung ảnh');
-    
-    showStatus('Chỉ sử dụng khung ảnh CSS dễ thương, bỏ qua khung ảnh từ API', false);
-    
-    // Load preset trước khi render
-    useCuteFrame = true;
-    if (window.CuteFrames && window.CuteFrames.FRAME_TYPES) {
-        selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
+    try {
+        console.log('Đang kiểm tra trạng thái khung ảnh');
+        
+        showStatus('Chỉ sử dụng khung ảnh CSS dễ thương, bỏ qua khung ảnh từ API', false);
+        
+        // Load preset trước khi render
+        useCuteFrame = true;
+        if (window.CuteFrames && window.CuteFrames.FRAME_TYPES) {
+            selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
+        }
+    } catch (error) {
+        console.error('Lỗi khi kiểm tra trạng thái khung ảnh:', error);
     }
 }
 
 // Cập nhật initCuteFrames để thêm kiểm tra
 function initCuteFrames() {
-    // Kiểm tra nếu CuteFrames đã tải
-    if (window.CuteFrames) {
-        cuteFrameSelector = document.getElementById('cute-frame-selector');
-        if (cuteFrameSelector) {
-            // Tạo preview cho các kiểu khung
-            window.CuteFrames.createFramePreview(cuteFrameSelector, (frame, index) => {
-                // Callback khi chọn khung ảnh
-                selectedCuteFrameType = frame.type;
-                useCuteFrame = true;
-                
-                // Bỏ trạng thái active từ khung ảnh thông thường
-                document.querySelectorAll('.frame-selector .frame-option').forEach(option => {
-                    option.classList.remove('active');
-                });
-                
-                // Render lại ảnh với khung mới
-                renderPreviewPhoto();
-            });
-            
-            // Chọn khung ảnh CSS mặc định
-            useCuteFrame = true;
-            selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
-            
-            // Kiểm tra trạng thái khung ảnh
-            checkFrameStatus();
+    try {
+        console.log('Đang khởi tạo khung ảnh dễ thương');
+        
+        // Kiểm tra nếu CuteFrames đã tải
+        if (window.CuteFrames) {
+            cuteFrameSelector = document.getElementById('cute-frame-selector');
+            if (cuteFrameSelector) {
+                try {
+                    // Tạo preview cho các kiểu khung
+                    window.CuteFrames.createFramePreview(cuteFrameSelector, (frame, index) => {
+                        // Callback khi chọn khung ảnh
+                        selectedCuteFrameType = frame.type;
+                        useCuteFrame = true;
+                        
+                        // Bỏ trạng thái active từ khung ảnh thông thường
+                        document.querySelectorAll('.frame-selector .frame-option').forEach(option => {
+                            option.classList.remove('active');
+                        });
+                        
+                        // Render lại ảnh với khung mới
+                        renderPreviewPhoto();
+                    });
+                    
+                    // Chọn khung ảnh CSS mặc định
+                    useCuteFrame = true;
+                    selectedCuteFrameType = window.CuteFrames.FRAME_TYPES.GRID_2X2;
+                    
+                    // Kiểm tra trạng thái khung ảnh
+                    checkFrameStatus();
+                } catch (error) {
+                    console.error('Lỗi khi tạo preview khung ảnh:', error);
+                }
+            } else {
+                console.warn('Không tìm thấy phần tử cute-frame-selector');
+            }
+        } else {
+            console.warn('CuteFrames chưa được tải.');
         }
-    } else {
-        console.warn('CuteFrames chưa được tải.');
+    } catch (error) {
+        console.error('Lỗi khi khởi tạo khung ảnh dễ thương:', error);
     }
-}  
+}
+
+// Hàm điều khiển nhạc nền
+function toggleBackgroundMusic() {
+    if (isMusicPlaying) {
+        backgroundMusic.pause();
+        isMusicPlaying = false;
+    } else {
+        backgroundMusic.play();
+        isMusicPlaying = true;
+    }
+}
+   

@@ -125,6 +125,7 @@ h1, h2, h3 {
     overflow: hidden;
     background-color: #000;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding-bottom: 60px;
 }
 
 video, canvas {
@@ -255,11 +256,56 @@ button.hidden {
 }
 
 #capture-btn {
-    background-color: #e91e63;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    padding: 0;
+    background-color: rgba(255, 255, 255, 0.3);
+    color: transparent;
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    z-index: 5;
 }
 
-#capture-btn:hover {
-    background-color: #c2185b;
+#capture-btn::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 65px;
+    height: 65px;
+    background-color: white;
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+#capture-btn:hover::before {
+    width: 70px;
+    height: 70px;
+    background-color: #f0f0f0;
+}
+
+#capture-btn:active::before {
+    width: 60px;
+    height: 60px;
+}
+
+.capture-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    padding: 0 20px;
+}
+
+/* Ẩn nút capture-btn trong controls khi đã thêm vào video-container */
+.capture-controls #capture-btn {
+    display: none;
 }
 
 #retake-btn, #back-to-capture-btn {
@@ -485,6 +531,30 @@ input:checked + .slider:before {
     }
 }
 
+/* PC Layout - Dải ảnh thumbnail sang trái */
+@media (min-width: 1024px) {
+    .booth-container {
+        flex-direction: row-reverse;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 30px;
+    }
+    
+    .thumbnail-strip {
+        display: flex;
+        flex-direction: column;
+        width: 120px;
+        max-width: 120px;
+        gap: 15px;
+        margin-top: 0;
+    }
+    
+    .thumbnail {
+        width: 100%;
+        margin: 0;
+    }
+}
+
 /* Thêm CSS cho nút API, màn hình cài đặt và các phần tử liên quan */
 
 .api-button {
@@ -589,4 +659,36 @@ input:checked + .slider:before {
 
 #api-status-text.error {
     color: #e91e63;
+}
+
+/* Nút điều khiển âm thanh */
+.music-control {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    transition: all 0.3s ease;
+}
+
+.music-control:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.music-control img {
+    width: 24px;
+    height: 24px;
+    filter: invert(1);
+}
+
+.music-control.muted img {
+    opacity: 0.5;
 } 

@@ -42,6 +42,10 @@
                     <div class="photo-counter">
                         <span id="current-photo">0</span>/4
                     </div>
+                    <button id="capture-btn">Chụp ảnh</button>
+                    <button class="music-control" id="music-control">
+                        <img src="stickers/music-icon.png" alt="Điều khiển nhạc">
+                    </button>
                 </div>
                 
                 <!-- Khung xem ảnh đã chụp -->
@@ -54,7 +58,6 @@
             </div>
             
             <div class="controls capture-controls">
-                <button id="capture-btn">Chụp ảnh</button>
                 <button id="retake-btn" class="hidden">Chụp lại</button>
                 <button id="continue-btn" class="hidden">Tiếp tục</button>
             </div>
@@ -170,5 +173,6 @@
     <!-- Âm thanh -->
     <audio id="countdown-sound" src="sounds/beep.mp3" preload="auto"></audio>
     <audio id="shutter-sound" src="sounds/shutter.mp3" preload="auto"></audio>
+    <audio id="background-music" src="nhac.mp3" preload="auto" loop></audio>
 </body>
 </html> 
